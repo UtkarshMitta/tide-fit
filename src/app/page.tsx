@@ -139,7 +139,8 @@ export default async function HomePage() {
           <IntegrationPill label="Tavily search" active={integrationStatus.tavily} />
           <IntegrationPill label="ElevenLabs voice" active={integrationStatus.elevenLabs} />
           <IntegrationPill label="LLM itinerary" active={integrationStatus.llm} />
-          <IntegrationPill label="Stay22 lodging" active />
+          <IntegrationPill label="Stay22 lodging map" active />
+          <IntegrationPill label="Stay22 live prices" active={integrationStatus.stay22Api} />
           <IntegrationPill label="Supabase" active={integrationStatus.supabase} />
           <IntegrationPill label="Google Calendar" active={integrationStatus.googleCalendar} />
           <IntegrationPill label="Strava" active={integrationStatus.strava} />

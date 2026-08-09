@@ -16,6 +16,8 @@ export type RiskLevel = (typeof RISK_LEVELS)[number];
 export interface GeocodedPlace {
   name: string;
   country: string;
+  /** ISO 3166-1 alpha-2, used to price lodging in the local currency. */
+  countryCode?: string;
   admin1?: string;
   latitude: number;
   longitude: number;
@@ -71,6 +73,27 @@ export interface LocalGrounding {
   source: "tavily" | "fallback";
 }
 
+export interface LodgingOption {
+  id: string;
+  name: string;
+  /** Stay22 Allez link, so a booking is attributed to our affiliate id. */
+  bookingUrl: string;
+  /** The OTA the booking link routes to, or the host a fallback result came from. */
+  provider: string;
+  /**
+   * `stay22` results carry live prices and ratings from the Accommodations API.
+   * `tavily` results are the keyless fallback: a real property page, no pricing.
+   */
+  source: "stay22" | "tavily";
+  address?: string;
+  thumbnail?: string;
+  rating?: { value: number; count?: number; stars?: number };
+  price?: { total: number; currency: string; nights: number };
+  distanceMeters?: number;
+  snippet?: string;
+  sourceUrl?: string;
+}
+
 export interface DayPlan {
   date: string;
   title: string;
@@ -106,6 +129,10 @@ export interface Trip {
   conditions: DayConditions[];
   grounding: LocalGrounding;
   plans: DayPlan[];
+  /** Optional so trips saved before lodging search existed still load. */
+  lodging?: LodgingOption[];
+  /** Affiliate id read back from Stay22's API, so the map widget matches the booking links. */
+  stay22Aid?: string;
   trainingLoad?: TrainingLoad;
   /** Present for the canned demo trip so the stage demo never depends on live APIs. */
   isDemo?: boolean;

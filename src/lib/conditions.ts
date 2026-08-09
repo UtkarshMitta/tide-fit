@@ -51,6 +51,7 @@ interface GeocodingResponse {
     latitude: number;
     longitude: number;
     country?: string;
+    country_code?: string;
     admin1?: string;
     timezone?: string;
     population?: number;
@@ -73,6 +74,7 @@ export async function geocodeDestination(query: string): Promise<GeocodedPlace |
   return {
     name: best.name,
     country: best.country ?? "",
+    countryCode: best.country_code?.toUpperCase(),
     admin1: best.admin1,
     latitude: best.latitude,
     longitude: best.longitude,

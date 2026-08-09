@@ -15,19 +15,23 @@ export function LodgingMap({
   destination,
   checkIn,
   nights,
+  affiliateId,
 }: {
   latitude: number;
   longitude: number;
   destination: string;
   checkIn: string;
   nights: number;
+  /** Read back from Stay22's API so the map matches the booking links. */
+  affiliateId?: string;
 }) {
   const [loaded, setLoaded] = useState(false);
   const checkOut = addDaysIso(checkIn, Math.max(nights, 1));
+  const aid = affiliateId ?? publicEnv.stay22AffiliateId;
 
   const src = useMemo(() => {
     const url = new URL("https://www.stay22.com/embed/gm");
-    url.searchParams.set("aid", publicEnv.stay22AffiliateId);
+    url.searchParams.set("aid", aid);
     url.searchParams.set("lat", String(latitude));
     url.searchParams.set("lng", String(longitude));
     url.searchParams.set("venue", destination);
@@ -37,7 +41,7 @@ export function LodgingMap({
     url.searchParams.set("maincolor", "1eaab3");
     url.searchParams.set("campaign", "tidefit-trip");
     return url.toString();
-  }, [latitude, longitude, destination, checkIn, checkOut]);
+  }, [aid, latitude, longitude, destination, checkIn, checkOut]);
 
   return (
     <section className="card overflow-hidden">
@@ -67,7 +71,7 @@ export function LodgingMap({
         />
       </div>
 
-      {publicEnv.stay22AffiliateId === "tidefit" ? (
+      {aid === "tidefit" ? (
         <p className="border-t border-white/10 px-5 py-3 text-xs text-slate-500">
           Using a placeholder Stay22 affiliate id — set{" "}
           <code className="font-mono text-slate-400">NEXT_PUBLIC_STAY22_AID</code> to load live

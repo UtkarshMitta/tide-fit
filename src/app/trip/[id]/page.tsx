@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { CalendarSyncButton } from "@/components/CalendarSyncButton";
 import { DayCard } from "@/components/DayCard";
+import { LodgingList } from "@/components/LodgingList";
 import { LodgingMap } from "@/components/LodgingMap";
 import { RiskBadge } from "@/components/RiskBadge";
 import { placeLabel } from "@/lib/conditions";
@@ -97,12 +98,22 @@ export default async function TripPage({ params }: { params: { id: string } }) {
       </section>
 
       <section className="mt-8">
+        <LodgingList
+          options={trip.lodging ?? []}
+          destination={trip.place.name}
+          checkIn={trip.input.startDate}
+          nights={trip.input.days}
+        />
+      </section>
+
+      <section className="mt-8">
         <LodgingMap
           latitude={trip.place.latitude}
           longitude={trip.place.longitude}
           destination={trip.place.name}
           checkIn={trip.input.startDate}
           nights={trip.input.days}
+          affiliateId={trip.stay22Aid}
         />
       </section>
 

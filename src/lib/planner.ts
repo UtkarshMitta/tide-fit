@@ -4,6 +4,7 @@ import { geocodeDestination, getTripConditions, placeLabel } from "@/lib/conditi
 import { buildDemoTrip } from "@/lib/demo";
 import { serverEnv } from "@/lib/env";
 import { generateItinerary } from "@/lib/itinerary";
+import { getLodgingOptions, type LodgingResult } from "@/lib/lodging";
 import { getLocalGrounding } from "@/lib/search";
 import { getTrainingLoad } from "@/lib/strava";
 import { SPORTS, type Sport, type Trip, type TripInput } from "@/lib/types";
@@ -52,9 +53,12 @@ export async function planTrip(input: TripInput): Promise<Trip> {
     );
   }
 
-  const [conditionsBundle, grounding, trainingLoad] = await Promise.all([
+  const [conditionsBundle, grounding, lodging, trainingLoad] = await Promise.all([
     getTripConditions(place, input.startDate, input.days, input.sports),
     getLocalGrounding(input.destination, input.startDate, input.sports),
+    getLodgingOptions(input.destination, place, input.startDate, input.days, input.sports).catch(
+      (): LodgingResult => ({ options: [] }),
+    ),
     getTrainingLoad().catch(() => undefined),
   ]);
 
@@ -75,6 +79,8 @@ export async function planTrip(input: TripInput): Promise<Trip> {
     conditions: conditionsBundle.conditions,
     grounding,
     plans,
+    lodging: lodging.options,
+    stay22Aid: lodging.aid,
     trainingLoad,
     itinerarySource: source,
   };

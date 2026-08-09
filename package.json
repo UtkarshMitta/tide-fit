@@ -9,7 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "demo:audio": "tsx --env-file-if-exists=.env.local scripts/prerender-demo-audio.ts",
-    "check:conditions": "tsx --env-file-if-exists=.env.local scripts/check-conditions.ts"
+    "check:conditions": "tsx --env-file-if-exists=.env.local scripts/check-conditions.ts",
+    "check:lodging": "tsx --env-file-if-exists=.env.local scripts/probe-lodging.ts"
   },
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "^2.62.0",

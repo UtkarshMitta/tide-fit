@@ -1,5 +1,13 @@
 import { classifyDay } from "@/lib/conditions";
-import type { DayPlan, GeocodedPlace, LocalGrounding, Sport, Trip } from "@/lib/types";
+import { buildAllezLink } from "@/lib/lodging";
+import type {
+  DayPlan,
+  GeocodedPlace,
+  LocalGrounding,
+  LodgingOption,
+  Sport,
+  Trip,
+} from "@/lib/types";
 import { addDaysIso, todayIso } from "@/lib/utils";
 
 export const DEMO_TRIP_ID = "demo-lisbon";
@@ -170,6 +178,67 @@ const DEMO_PLAN_TEXT: Omit<DayPlan, "date">[] = [
 ];
 
 /**
+ * Canned accommodation for the sample trip. These are real properties, but the
+ * booking links go through Allez `roam`, which resolves them by name — so the
+ * demo never navigates to a hand-written OTA URL that might have rotted.
+ */
+const DEMO_LODGING: {
+  name: string;
+  search: string;
+  provider: string;
+  address: string;
+  snippet: string;
+  rating: { value: number; count: number; stars: number };
+  nightlyTotal: number;
+  distanceMeters: number;
+}[] = [
+  {
+    name: "Hotel Praia Mar",
+    search: "Hotel Praia Mar Carcavelos",
+    provider: "Booking.com",
+    address: "Rua do Gurué 16, Carcavelos, Portugal",
+    snippet:
+      "Beachfront in Carcavelos with a rooftop pool, two minutes to the sand and ten from the Cascais-line station — the shortest possible commute to the swim.",
+    rating: { value: 8.4, count: 1863, stars: 4 },
+    nightlyTotal: 402,
+    distanceMeters: 17800,
+  },
+  {
+    name: "Riviera Hotel",
+    search: "Riviera Hotel Carcavelos Portugal",
+    provider: "Expedia",
+    address: "Rua Bartolomeu Dias 22, Carcavelos, Portugal",
+    snippet:
+      "Quiet Carcavelos hotel a short walk from the sheltered eastern end of the beach, with secure parking and somewhere to rinse and dry a wetsuit.",
+    rating: { value: 8.0, count: 942, stars: 4 },
+    nightlyTotal: 351,
+    distanceMeters: 18400,
+  },
+  {
+    name: "Vila Galé Estoril",
+    search: "Vila Gale Estoril hotel",
+    provider: "Hotels.com",
+    address: "Avenida Marginal, Estoril, Portugal",
+    snippet:
+      "On the Estoril seafront beside the Marginal cycleway, which turns the 20 km coastal ride to Cascais into a ride-out-the-door affair.",
+    rating: { value: 8.6, count: 2571, stars: 4 },
+    nightlyTotal: 528,
+    distanceMeters: 21200,
+  },
+  {
+    name: "Pestana Palace Lisboa",
+    search: "Pestana Palace Lisboa",
+    provider: "Booking.com",
+    address: "Rua Jau 54, Lisbon, Portugal",
+    snippet:
+      "Garden hotel in Alcântara, close to both the Tagus riverside running path and the Monsanto trail entrances, with a 25 m outdoor pool.",
+    rating: { value: 9.1, count: 3104, stars: 5 },
+    nightlyTotal: 861,
+    distanceMeters: 3900,
+  },
+];
+
+/**
  * Pre-rendered narration, if it has been baked in with `npm run demo:audio`.
  * The audio route falls back to a live ElevenLabs call when these are absent.
  */
@@ -198,6 +267,28 @@ export function buildDemoTrip(startDate = todayIso()): Trip {
     dates.map((date, index) => [date, DEMO_AUDIO_FILES[index]]),
   );
 
+  const checkOut = addDaysIso(dates[0], dates.length);
+  const lodging: LodgingOption[] = DEMO_LODGING.map((entry) => ({
+    id: entry.search,
+    name: entry.name,
+    provider: entry.provider,
+    source: "stay22",
+    address: entry.address,
+    snippet: entry.snippet,
+    rating: entry.rating,
+    price: { total: entry.nightlyTotal, currency: "EUR", nights: dates.length },
+    distanceMeters: entry.distanceMeters,
+    // Resolved by name through Allez roam, so no hand-written OTA URL can rot.
+    bookingUrl: buildAllezLink({
+      name: entry.search,
+      sourceUrl: "",
+      provider: "roam",
+      place: DEMO_PLACE,
+      checkIn: dates[0],
+      checkOut,
+    }),
+  }));
+
   return {
     id: DEMO_TRIP_ID,
     createdAt: new Date().toISOString(),
@@ -211,6 +302,7 @@ export function buildDemoTrip(startDate = todayIso()): Trip {
     conditions,
     grounding: DEMO_GROUNDING,
     plans,
+    lodging,
     isDemo: true,
     demoAudioByDate,
     itinerarySource: "llm",

@@ -9,13 +9,14 @@ Built for the Checkout Travel & Hospitality Hackathon.
 - **Per-sport condition engine.** Swimmers get marine sea state (wave height, wave period, sea surface temperature). Runners get air quality as US AQI. Cyclists and hikers get wind gusts, feels-like temperature, rainfall and UV. Every verdict carries the measurement that drove it, so a badge is always explainable.
 - **Grounded itineraries.** Tavily search results are fed into the itinerary prompt, and the model is instructed to only name venues that appear in those results. The trip page lists the sources it used.
 - **Safety actually changes the plan.** On an unsafe day the itinerary moves the session indoors or swaps the sport instead of cheerfully sending you into 1.9 m shorebreak.
+- **Bookable lodging, not just a map.** Stay22's Accommodations API supplies real stays with live prices, ratings and per-supplier deeplinks, ranked to favour well-reviewed properties that actually have a quote for your dates.
 - **Degrades cleanly.** Every integration is optional. With zero API keys you still get real condition data, classification, a rule-based itinerary and a device-voice briefing.
 
 ## Stack
 
 Next.js 14 (App Router) · TypeScript · Tailwind CSS · Supabase (auth + saved trips) · Vercel
 
-**Sponsor APIs:** Tavily (search grounding) · ElevenLabs (voice narration) · Stay22 (lodging map)
+**Sponsor APIs:** Tavily (search grounding) · ElevenLabs (voice narration) · Stay22 (Accommodations API + map widget)
 
 **Condition data:** Open-Meteo Geocoding, Marine and Forecast APIs (no key) · Open-Meteo Air Quality or OpenWeatherMap Air Pollution · Strava (optional training load) · Google Calendar (optional sync)
 
@@ -71,12 +72,30 @@ src/lib/thresholds.ts   every safety number, in one tunable file
 src/lib/search.ts       Tavily wrapper for local grounding
 src/lib/itinerary.ts    LLM itinerary + deterministic fallback
 src/lib/voice.ts        ElevenLabs TTS with per-character caching
+src/lib/stay22.ts       Stay22 Accommodations API client + quality ranking
+src/lib/lodging.ts      lodging discovery: Stay22 first, Tavily fallback
 src/lib/calendar.ts     Google Calendar OAuth + event creation
 src/lib/strava.ts       Strava OAuth + training load summary
 src/lib/planner.ts      the end-to-end pipeline
 src/lib/demo.ts         the canned Lisbon trip
 src/components/DayCard.tsx     conditions, itinerary text, audio player
-src/components/LodgingMap.tsx  Stay22 embed
+src/components/LodgingList.tsx bookable stays with live prices
+src/components/LodgingMap.tsx  Stay22 map embed
+```
+
+## How lodging works
+
+Two tiers, so the trip page always has somewhere to stay:
+
+1. **Stay22 Accommodations API** (`STAY22_API_KEY`) — live inventory near the destination with prices for your exact dates, ratings, thumbnails and an Allez deeplink per supplier. TideFit picks the cheapest supplier that actually quoted a price, prices in the destination's local currency, and reads the affiliate id back out of the returned links so the map widget matches the booking links without extra configuration.
+2. **Tavily fallback** (`TAVILY_API_KEY`) — a search scoped to booking sites, filtered to URL shapes that are a single property page rather than a "10 best hotels" listicle, with Allez links built by hand. Real names and working links, no prices.
+
+Ranking deserves a note, because the naive version is bad. The feed is ordered by distance, so at a city centroid the first rows are one-review studios; but the best-reviewed hotels often have no price for the requested dates. The tiers therefore require *both* review credibility and a live quote, relaxing only to fill remaining slots. Requesting a larger page makes this worse rather than better — `pageSize=20` pads the response with duplicates and unpriced rows, while ~12 comes back unique and fully priced.
+
+Check any destination without touching the UI:
+
+```bash
+npm run check:lodging
 ```
 
 ## Notable implementation details
