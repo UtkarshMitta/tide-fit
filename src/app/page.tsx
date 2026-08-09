@@ -88,8 +88,8 @@ export default async function HomePage() {
         <TripForm demoTripId={DEMO_TRIP_ID} />
         <div className="mt-4">
           <StravaConnect
-            configured={integrationStatus.strava}
-            connected={integrationStatus.strava && isStravaConnected()}
+            hostConfigured={integrationStatus.strava}
+            connected={isStravaConnected()}
           />
         </div>
       </section>
@@ -143,7 +143,7 @@ export default async function HomePage() {
           <IntegrationPill label="Stay22 live prices" active={integrationStatus.stay22Api} />
           <IntegrationPill label="Supabase" active={integrationStatus.supabase} />
           <IntegrationPill label="Google Calendar" active={integrationStatus.googleCalendar} />
-          <IntegrationPill label="Strava" active={integrationStatus.strava} />
+          <IntegrationPill label="Strava (optional)" active={integrationStatus.strava} />
         </div>
         <p className="mt-4 max-w-2xl text-xs leading-relaxed text-slate-500">
           Condition thresholds are a planning aid, not a substitute for local lifeguards, park

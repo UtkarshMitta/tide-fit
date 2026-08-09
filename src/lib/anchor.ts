@@ -169,10 +169,10 @@ function noteForCentre(
 ): string {
   if (sports.includes("swimming")) {
     if (!marineSource) {
-      return `No modelled open water near ${place.name}, so there is no fixed swim spot to measure from — distances are from the city centre, and the swim plan is pool-based.`;
+      return `No modelled open water near ${place.name} — this is not an open-water destination. Distances are from the village/centre, and the plan is pool or indoor swimming only (no beaches to invent).`;
     }
     // Marine data at the centroid is usually an estuary/river, not a swim beach.
-    return `No named swim beach could be pinned near ${place.name}, so distances are from the city centre. The swim plan will use local open water or a pool.`;
+    return `No named swim beach could be pinned near ${place.name}, so distances are from the centre. Prefer a confirmed local swim spot or a pool over guessing a shoreline.`;
   }
 
   return `No fixed training spot could be pinned for this trip — running, cycling and hiking routes start wherever you are staying, so distances are measured from ${place.name} centre.`;

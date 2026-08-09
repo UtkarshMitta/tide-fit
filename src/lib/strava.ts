@@ -1,14 +1,16 @@
 import { cookies } from "next/headers";
 
-import { requireEnv, serverEnv } from "@/lib/env";
+import { serverEnv } from "@/lib/env";
 import { buildUrl, fetchJson, softFetch } from "@/lib/http";
 import type { TrainingLoad } from "@/lib/types";
 import { round } from "@/lib/utils";
 
 /**
- * Strava is a stretch integration: when connected, the athlete's last seven
- * days of training feed the itinerary prompt so a heavy block earns a genuine
- * recovery day instead of another hard session.
+ * Strava is optional. Credentials can come from the server env (one shared app)
+ * or from the visitor — they create a free API application at
+ * strava.com/settings/api and paste Client ID + Client Secret into TideFit.
+ * Either way the athlete then OAuth-connects their own account so the last
+ * seven days of training can shape the itinerary.
  */
 
 const STRAVA_AUTHORIZE_URL = "https://www.strava.com/oauth/authorize";
@@ -18,14 +20,61 @@ const STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
 const ACCESS_COOKIE = "tidefit_strava_access";
 const REFRESH_COOKIE = "tidefit_strava_refresh";
 const EXPIRY_COOKIE = "tidefit_strava_expiry";
+/** Visitor-supplied API application credentials (when server env is empty). */
+const CLIENT_ID_COOKIE = "tidefit_strava_client_id";
+const CLIENT_SECRET_COOKIE = "tidefit_strava_client_secret";
 
 export function stravaRedirectUri(): string {
   return `${serverEnv.appUrl}/api/strava/callback`;
 }
 
-export function getStravaAuthUrl(state: string): string {
+function cookieOptions(maxAge: number) {
+  const secure = serverEnv.appUrl.startsWith("https");
+  return { httpOnly: true, secure, sameSite: "lax" as const, path: "/", maxAge };
+}
+
+export interface StravaAppCredentials {
+  clientId: string;
+  clientSecret: string;
+  /** True when the visitor pasted their own app credentials. */
+  source: "env" | "user";
+}
+
+/** Env credentials win; otherwise use whatever the visitor pasted. */
+export function getStravaCredentials(): StravaAppCredentials | null {
+  if (serverEnv.stravaClientId && serverEnv.stravaClientSecret) {
+    return {
+      clientId: serverEnv.stravaClientId,
+      clientSecret: serverEnv.stravaClientSecret,
+      source: "env",
+    };
+  }
+
+  const cookieStore = cookies();
+  const clientId = cookieStore.get(CLIENT_ID_COOKIE)?.value?.trim();
+  const clientSecret = cookieStore.get(CLIENT_SECRET_COOKIE)?.value?.trim();
+  if (clientId && clientSecret) {
+    return { clientId, clientSecret, source: "user" };
+  }
+
+  return null;
+}
+
+export function hasStravaCredentials(): boolean {
+  return getStravaCredentials() !== null;
+}
+
+export function persistStravaAppCredentials(clientId: string, clientSecret: string): void {
+  const cookieStore = cookies();
+  // 30 days — long enough for a hackathon weekend without re-pasting.
+  const options = cookieOptions(60 * 60 * 24 * 30);
+  cookieStore.set(CLIENT_ID_COOKIE, clientId.trim(), options);
+  cookieStore.set(CLIENT_SECRET_COOKIE, clientSecret.trim(), options);
+}
+
+export function getStravaAuthUrl(state: string, credentials: StravaAppCredentials): string {
   return buildUrl(STRAVA_AUTHORIZE_URL, {
-    client_id: requireEnv(serverEnv.stravaClientId, "STRAVA_CLIENT_ID"),
+    client_id: credentials.clientId,
     redirect_uri: stravaRedirectUri(),
     response_type: "code",
     approval_prompt: "auto",
@@ -40,34 +89,50 @@ interface StravaTokenResponse {
   expires_at: number;
 }
 
-async function requestToken(params: Record<string, string>): Promise<StravaTokenResponse> {
+async function requestToken(
+  credentials: StravaAppCredentials,
+  params: Record<string, string>,
+): Promise<StravaTokenResponse> {
   return fetchJson<StravaTokenResponse>(STRAVA_TOKEN_URL, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      client_id: requireEnv(serverEnv.stravaClientId, "STRAVA_CLIENT_ID"),
-      client_secret: requireEnv(serverEnv.stravaClientSecret, "STRAVA_CLIENT_SECRET"),
+      client_id: credentials.clientId,
+      client_secret: credentials.clientSecret,
       ...params,
     }),
   });
 }
 
 export async function exchangeStravaCode(code: string): Promise<StravaTokenResponse> {
-  return requestToken({ code, grant_type: "authorization_code" });
+  const credentials = getStravaCredentials();
+  if (!credentials) throw new Error("Strava credentials are missing.");
+  return requestToken(credentials, { code, grant_type: "authorization_code" });
 }
 
 export function persistStravaTokens(tokens: StravaTokenResponse): void {
   const cookieStore = cookies();
-  const secure = serverEnv.appUrl.startsWith("https");
-  const shared = { httpOnly: true, secure, sameSite: "lax" as const, path: "/" };
-
-  cookieStore.set(ACCESS_COOKIE, tokens.access_token, { ...shared, maxAge: 60 * 60 * 6 });
-  cookieStore.set(REFRESH_COOKIE, tokens.refresh_token, { ...shared, maxAge: 60 * 60 * 24 * 30 });
-  cookieStore.set(EXPIRY_COOKIE, String(tokens.expires_at), { ...shared, maxAge: 60 * 60 * 24 * 30 });
+  cookieStore.set(ACCESS_COOKIE, tokens.access_token, cookieOptions(60 * 60 * 6));
+  cookieStore.set(REFRESH_COOKIE, tokens.refresh_token, cookieOptions(60 * 60 * 24 * 30));
+  cookieStore.set(EXPIRY_COOKIE, String(tokens.expires_at), cookieOptions(60 * 60 * 24 * 30));
 }
 
 export function isStravaConnected(): boolean {
   return Boolean(cookies().get(REFRESH_COOKIE)?.value || cookies().get(ACCESS_COOKIE)?.value);
+}
+
+/** Drops the athlete session and any visitor-pasted app credentials. */
+export function clearStravaConnection(): void {
+  const cookieStore = cookies();
+  for (const name of [
+    ACCESS_COOKIE,
+    REFRESH_COOKIE,
+    EXPIRY_COOKIE,
+    CLIENT_ID_COOKIE,
+    CLIENT_SECRET_COOKIE,
+  ]) {
+    cookieStore.delete(name);
+  }
 }
 
 /** Returns a usable access token, refreshing it when the stored one has expired. */
@@ -79,10 +144,11 @@ async function getStravaAccessToken(): Promise<string | null> {
   if (stillValid) return access;
 
   const refresh = cookieStore.get(REFRESH_COOKIE)?.value;
-  if (!refresh || !serverEnv.stravaClientId) return access ?? null;
+  const credentials = getStravaCredentials();
+  if (!refresh || !credentials) return access ?? null;
 
   const refreshed = await softFetch("Strava token refresh", () =>
-    requestToken({ refresh_token: refresh, grant_type: "refresh_token" }),
+    requestToken(credentials, { refresh_token: refresh, grant_type: "refresh_token" }),
   );
   if (!refreshed) return access ?? null;
 

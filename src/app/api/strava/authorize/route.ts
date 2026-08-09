@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
 
-import { integrationStatus } from "@/lib/env";
-import { getStravaAuthUrl } from "@/lib/strava";
+import { getStravaAuthUrl, getStravaCredentials } from "@/lib/strava";
 
 export async function GET(request: Request) {
-  if (!integrationStatus.strava) {
-    return NextResponse.json({ error: "Strava is not configured." }, { status: 503 });
+  const credentials = getStravaCredentials();
+  if (!credentials) {
+    return NextResponse.json(
+      {
+        error:
+          "Add your Strava Client ID and Client Secret first (create a free app at strava.com/settings/api).",
+      },
+      { status: 503 },
+    );
   }
+
   const returnTo = new URL(request.url).searchParams.get("returnTo") ?? "/";
-  return NextResponse.redirect(getStravaAuthUrl(returnTo));
+  return NextResponse.redirect(getStravaAuthUrl(returnTo, credentials));
 }
