@@ -16,6 +16,7 @@ export function LodgingMap({
   checkIn,
   nights,
   affiliateId,
+  anchorLabel,
 }: {
   latitude: number;
   longitude: number;
@@ -24,6 +25,8 @@ export function LodgingMap({
   nights: number;
   /** Read back from Stay22's API so the map matches the booking links. */
   affiliateId?: string;
+  /** What the map is centred on, when it is a training spot rather than the city. */
+  anchorLabel?: string;
 }) {
   const [loaded, setLoaded] = useState(false);
   const checkOut = addDaysIso(checkIn, Math.max(nights, 1));
@@ -49,7 +52,7 @@ export function LodgingMap({
         <div>
           <h2 className="text-lg font-semibold text-slate-50">Where to stay</h2>
           <p className="text-sm text-slate-400">
-            Stays near your training spots in {destination} · {checkIn} → {checkOut}
+            Centred on {anchorLabel ?? destination} · {checkIn} → {checkOut}
           </p>
         </div>
         <span className="text-xs text-slate-500">Powered by Stay22</span>

@@ -7,9 +7,9 @@ Built for the Checkout Travel & Hospitality Hackathon.
 ## What makes it different
 
 - **Per-sport condition engine.** Swimmers get marine sea state (wave height, wave period, sea surface temperature). Runners get air quality as US AQI. Cyclists and hikers get wind gusts, feels-like temperature, rainfall and UV. Every verdict carries the measurement that drove it, so a badge is always explainable.
-- **Grounded itineraries.** Tavily search results are fed into the itinerary prompt, and the model is instructed to only name venues that appear in those results. The trip page lists the sources it used.
+- **Grounded itineraries.** Tavily search results are fed into the itinerary prompt, and the model is instructed to only name venues that appear in those results. The plan names the place, never the page it came from: forums and social sites are excluded from the search, URLs are withheld from the prompt, and publisher or subreddit suffixes are stripped out of any headline before it reaches the day plan.
 - **Safety actually changes the plan.** On an unsafe day the itinerary moves the session indoors or swaps the sport instead of cheerfully sending you into 1.9 m shorebreak.
-- **Bookable lodging, not just a map.** Stay22's Accommodations API supplies real stays with live prices, ratings and per-supplier deeplinks, ranked to favour well-reviewed properties that actually have a quote for your dates.
+- **Bookable lodging, not just a map.** Stay22's Accommodations API supplies real stays with live prices, ratings and per-supplier deeplinks. TideFit filters to well-reviewed properties that actually have a quote for your dates, then shows the top five cheapest first with distance from the centre, an estimated walk or drive, and the check-in and check-out dates the price covers.
 - **Degrades cleanly.** Every integration is optional. With zero API keys you still get real condition data, classification, a rule-based itinerary and a device-voice briefing.
 
 ## Stack
@@ -90,7 +90,7 @@ Two tiers, so the trip page always has somewhere to stay:
 1. **Stay22 Accommodations API** (`STAY22_API_KEY`) — live inventory near the destination with prices for your exact dates, ratings, thumbnails and an Allez deeplink per supplier. TideFit picks the cheapest supplier that actually quoted a price, prices in the destination's local currency, and reads the affiliate id back out of the returned links so the map widget matches the booking links without extra configuration.
 2. **Tavily fallback** (`TAVILY_API_KEY`) — a search scoped to booking sites, filtered to URL shapes that are a single property page rather than a "10 best hotels" listicle, with Allez links built by hand. Real names and working links, no prices.
 
-Ranking deserves a note, because the naive version is bad. The feed is ordered by distance, so at a city centroid the first rows are one-review studios; but the best-reviewed hotels often have no price for the requested dates. The tiers therefore require *both* review credibility and a live quote, relaxing only to fill remaining slots. Requesting a larger page makes this worse rather than better — `pageSize=20` pads the response with duplicates and unpriced rows, while ~12 comes back unique and fully priced.
+Ranking deserves a note, because the naive version is bad. The feed is ordered by distance, so at a city centroid the first rows are one-review studios; but the best-reviewed hotels often have no price for the requested dates. The tiers therefore require *both* review credibility and a live quote, relaxing only to fill remaining slots. Requesting a larger page makes this worse rather than better — `pageSize=20` pads the response with duplicates and unpriced rows, while ~12 comes back unique and fully priced. Quality decides which five stays make the list; the list itself is then sorted cheapest to most expensive, since that is the order a traveller compares in.
 
 Check any destination without touching the UI:
 
@@ -104,6 +104,7 @@ npm run check:lodging
 - **Honest unknowns.** Air-quality forecasts run about 5 days out and weather about 16. Days beyond those horizons are marked "no data" rather than given a false verdict, and a swim is never graded on wind alone when the sea state is missing.
 - **US AQI from raw pollutants.** When `OPENWEATHER_API_KEY` is set, PM2.5 and PM10 concentrations are converted using the EPA 2024 breakpoints so the number means the same thing as the Open-Meteo `us_aqi` fallback.
 - **Voice endpoint is not an open TTS proxy.** `/api/voice` takes a trip id and a date, builds the script server-side, and caches by content hash so replays don't re-bill.
+- **Every briefing can be paused.** ElevenLabs audio gets the native player controls; the device-voice fallback has no player of its own, so the card supplies pause, resume and stop wired to the speech synthesis queue.
 
 ## Deploying
 

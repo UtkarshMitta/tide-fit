@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { summariseDayForPrompt } from "@/lib/conditions";
 import { serverEnv } from "@/lib/env";
-import { groundingForPrompt } from "@/lib/search";
+import { groundingForPrompt, placeNameFromResult } from "@/lib/search";
 import {
   SPORT_LABELS,
   type DayConditions,
@@ -11,13 +11,14 @@ import {
   type GeocodedPlace,
   type LocalGrounding,
   type Sport,
+  type TrainingAnchor,
   type TrainingLoad,
 } from "@/lib/types";
-import { formatDayLabel, titleCase } from "@/lib/utils";
+import { formatDayLabel, titleCase, travelEstimate } from "@/lib/utils";
 
 const SYSTEM_PROMPT = `You are a multi-sport trip planner for travelling athletes (swimmers, runners, cyclists, hikers).
 
-For each day you are given: classified safety conditions per sport (SAFE / CAUTION / UNSAFE with the measured values behind the verdict), live web search results about the destination, and optionally the traveller's recent training load.
+For each day you are given: classified safety conditions per sport (SAFE / CAUTION / UNSAFE with the measured values behind the verdict), live web search results about the destination including local transport, where the training actually happens, and optionally the traveller's recent training load.
 
 Rules you must follow:
 1. Only name venues, routes, beaches, trails, businesses or events that appear in the provided search results. If the results do not cover something, describe the session generically ("a flat riverside loop") rather than inventing a name.
@@ -25,10 +26,12 @@ Rules you must follow:
 3. For CAUTION days, keep the session but adapt it (shorter, earlier, sheltered, lower intensity) and state the specific adaptation.
 4. Reference the actual numbers you were given (wave height, AQI, gusts, feels-like temperature) rather than vague claims about the weather.
 5. If training load is provided, respect it: insert genuine recovery after a heavy block, and do not stack hard days.
-6. Write for an athlete: concrete, warm, and practical. No hype, no emoji, no markdown formatting.
+6. Name the place, never the source. Do not mention websites, publications, forums, subreddits, blogs or "according to" attributions — the traveller wants the beach, not the page it was found on.
+7. Every day needs concrete travel logistics in the "travel" field: the mode of transport (walk, metro, suburban train, bus, tram, ferry, bike, taxi or car), a realistic door-to-door duration, and what time to leave to make the session. Name specific lines, stations or stops ONLY when they appear in the LOCAL TRANSPORT results; otherwise say "a local train" or "a 15 minute taxi" rather than inventing a line. If the session is walkable, say so and give the walking time. Mention the return leg when it is awkward (last service, one-way wind, a climb home).
+8. Write for an athlete: concrete, warm, and practical. No hype, no emoji, no markdown formatting.
 
 Return JSON only, matching this shape exactly:
-{"days":[{"date":"YYYY-MM-DD","title":"short evocative day title","morning":"2-3 sentences: the training session, where, and the safety-driven adjustment","midday":"2-3 sentences: recovery plus a real local experience from the search results","evening":"1-2 sentences: food, recovery, and what to prep for tomorrow","safetyNote":"one sentence citing the limiting measurement","citedPlaces":["names of real places you used from the search results"]}]}`;
+{"days":[{"date":"YYYY-MM-DD","title":"short evocative day title","morning":"2-3 sentences: the training session, where, and the safety-driven adjustment","travel":"1-2 sentences: mode of transport, door-to-door duration, and when to leave","midday":"2-3 sentences: recovery plus a real local experience from the search results","evening":"1-2 sentences: food, recovery, and what to prep for tomorrow","safetyNote":"one sentence citing the limiting measurement","citedPlaces":["names of real places you used from the search results"]}]}`;
 
 const DayPlanSchema = z.object({
   date: z.string(),
@@ -36,6 +39,7 @@ const DayPlanSchema = z.object({
   morning: z.string(),
   midday: z.string(),
   evening: z.string(),
+  travel: z.string().optional().default(""),
   safetyNote: z.string().optional().default(""),
   citedPlaces: z.array(z.string()).optional().default([]),
 });
@@ -46,6 +50,8 @@ export interface ItineraryRequest {
   place: GeocodedPlace;
   destinationLabel: string;
   sports: Sport[];
+  /** Where the training happens, which is what the travel advice has to solve. */
+  anchor: TrainingAnchor;
   conditions: DayConditions[];
   grounding: LocalGrounding;
   trainingLoad?: TrainingLoad;
@@ -57,11 +63,14 @@ export interface ItineraryResult {
 }
 
 export function buildUserPrompt(request: ItineraryRequest): string {
-  const { destinationLabel, sports, conditions, grounding, trainingLoad } = request;
+  const { destinationLabel, sports, anchor, conditions, grounding, trainingLoad } = request;
 
   return [
     `Destination: ${destinationLabel}`,
     `Sports in focus: ${sports.map((sport) => SPORT_LABELS[sport]).join(", ")}`,
+    anchor.kind === "swim-spot"
+      ? `Where the swim happens: open water roughly ${anchor.distanceFromCentreKm} km from ${destinationLabel} centre, so the day involves getting out there and back.`
+      : `No single fixed training location — sessions start from wherever the traveller is staying in ${destinationLabel}.`,
     `Trip dates: ${conditions[0]?.date} to ${conditions[conditions.length - 1]?.date} (${conditions.length} days)`,
     trainingLoad && trainingLoad.source === "strava"
       ? `Recent training load (last 7 days, from Strava): ${trainingLoad.summary}`
@@ -143,6 +152,29 @@ const SESSION_BY_SPORT: Record<Sport, { safe: string; caution: string; unsafe: s
   },
 };
 
+/**
+ * Travel advice without an LLM. It can only use what we measured — the distance
+ * to the training anchor — so it gives a mode and a duration and stops there
+ * rather than naming a line it cannot verify.
+ */
+function fallbackTravel(request: ItineraryRequest, day: DayConditions): string {
+  const { anchor, place } = request;
+
+  if (anchor.kind !== "swim-spot") {
+    return `Everything today starts from where you are staying in ${place.name} — no transport needed beyond a warm-up walk or spin to the start.`;
+  }
+
+  const swimIsOff = day.bySport.some(
+    (sport) => sport.sport === "swimming" && (sport.risk === "unsafe" || sport.risk === "unknown"),
+  );
+  if (swimIsOff) {
+    return `No trip out to the coast today — the water is off, so stay local in ${place.name} and keep the session on your doorstep.`;
+  }
+
+  const meters = anchor.distanceFromCentreKm * 1000;
+  return `The water is about ${anchor.distanceFromCentreKm} km from ${place.name} centre — roughly ${travelEstimate(meters).replace("~", "")} each way by road, or a local train if one runs the coast. Leave early enough to be swimming by mid-morning, and plan the return leg before you go.`;
+}
+
 function buildFallbackPlan(request: ItineraryRequest, day: DayConditions): DayPlan {
   const label = formatDayLabel(day.date);
   const sessions = day.bySport.map((sport) => {
@@ -155,23 +187,24 @@ function buildFallbackPlan(request: ItineraryRequest, day: DayConditions): DayPl
     .flatMap((sport) => sport.metrics)
     .find((metric) => metric.risk === "caution" || metric.risk === "unsafe");
 
-  const spot = request.grounding.spots[0];
-  const event = request.grounding.events[0];
+  const spot = request.grounding.spots.map(placeNameFromResult).find(Boolean);
+  const event = request.grounding.events.map(placeNameFromResult).find(Boolean);
 
   return {
     date: day.date,
     title: `${label} in ${request.place.name}`,
     morning: sessions.join(". ") + ".",
     midday: spot
-      ? `Refuel, then explore the area around ${spot.title}.`
+      ? `Refuel, then explore the area around ${spot}.`
       : "Refuel properly, stay on top of hydration, and take a slow walk through the neighbourhood.",
     evening: event
-      ? `Easy evening. Worth checking: ${event.title}.`
+      ? `Easy evening. Worth checking: ${event}.`
       : "Easy evening — stretch, eat well, and lay out kit for tomorrow.",
+    travel: fallbackTravel(request, day),
     safetyNote: limiter
       ? `${limiter.label}: ${limiter.note}`
       : `Conditions classified ${day.overallRisk.toUpperCase()} across your selected sports.`,
-    citedPlaces: spot ? [spot.title] : [],
+    citedPlaces: spot ? [spot] : [],
   };
 }
 
@@ -185,6 +218,8 @@ export function briefingScript(plan: DayPlan, place: GeocodedPlace): string {
     `Good morning. Here's your day in ${place.name}.`,
     plan.morning,
     plan.safetyNote,
+    // Logistics are the most useful thing to hear while packing a bag.
+    plan.travel,
     plan.midday,
     plan.evening,
   ]

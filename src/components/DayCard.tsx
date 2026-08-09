@@ -93,17 +93,20 @@ export function DayCard({
           {(
             [
               ["Morning", plan.morning],
+              ["Getting there", plan.travel],
               ["Midday", plan.midday],
               ["Evening", plan.evening],
             ] as const
-          ).map(([label, text]) => (
-            <section key={label}>
-              <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-                {label}
-              </h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-slate-200">{text}</p>
-            </section>
-          ))}
+          )
+            .filter(([, text]) => Boolean(text))
+            .map(([label, text]) => (
+              <section key={label}>
+                <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  {label}
+                </h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-slate-200">{text}</p>
+              </section>
+            ))}
 
           {plan.safetyNote ? (
             <p className="rounded-xl border border-white/10 bg-slate-950/50 px-4 py-3 text-sm text-slate-300">

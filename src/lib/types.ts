@@ -69,8 +69,30 @@ export interface LocalGrounding {
   answer?: string;
   spots: SearchResult[];
   events: SearchResult[];
+  /** How to get around locally, so travel advice cites real lines and services. */
+  transport: SearchResult[];
   queries: string[];
   source: "tavily" | "fallback";
+}
+
+/**
+ * The point a trip is organised around: where the training actually happens.
+ *
+ * For swimmers that is the nearest modelled open water, which can be tens of
+ * kilometres from the geocoded city centre — a Lisbon swim happens at
+ * Carcavelos, not at Marquês de Pombal. Lodging is searched and measured from
+ * here rather than from the centroid. Land sports have no comparable fixed
+ * coordinate, so the anchor falls back to the centre and says so.
+ */
+export interface TrainingAnchor {
+  latitude: number;
+  longitude: number;
+  kind: "swim-spot" | "centre";
+  /** Short phrase for column labels: "the swim spot", "Lisbon centre". */
+  label: string;
+  /** Full explanation of why distances are measured from here. */
+  note: string;
+  distanceFromCentreKm: number;
 }
 
 export interface LodgingOption {
@@ -101,6 +123,11 @@ export interface DayPlan {
   midday: string;
   evening: string;
   safetyNote: string;
+  /**
+   * Getting to the session: mode of transport, rough duration, and what to
+   * leave with. Optional so trips saved before this existed still load.
+   */
+  travel?: string;
   /** Places the model pulled from grounded search results, for citation in the UI. */
   citedPlaces: string[];
 }
@@ -131,6 +158,8 @@ export interface Trip {
   plans: DayPlan[];
   /** Optional so trips saved before lodging search existed still load. */
   lodging?: LodgingOption[];
+  /** The point lodging distances are measured from. */
+  anchor?: TrainingAnchor;
   /** Affiliate id read back from Stay22's API, so the map widget matches the booking links. */
   stay22Aid?: string;
   trainingLoad?: TrainingLoad;

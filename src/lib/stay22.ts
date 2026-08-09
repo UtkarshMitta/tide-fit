@@ -1,6 +1,7 @@
 import { requireEnv, serverEnv } from "@/lib/env";
 import { buildUrl, fetchJson } from "@/lib/http";
-import type { GeocodedPlace, LodgingOption } from "@/lib/types";
+import type { GeocodedPlace, LodgingOption, TrainingAnchor } from "@/lib/types";
+import { haversineKm } from "@/lib/utils";
 
 /**
  * Stay22 Accommodations API — the primary lodging source. Unlike scraping OTA
@@ -161,6 +162,30 @@ function rankByQuality(results: Stay22Result[], limit: number): Stay22Result[] {
   return chosen;
 }
 
+/** Quality decides *which* stays make the list; price decides the order shown. */
+export function sortByPrice(options: LodgingOption[]): LodgingOption[] {
+  return options
+    .slice()
+    .sort((a, b) => (a.price?.total ?? Infinity) - (b.price?.total ?? Infinity));
+}
+
+/**
+ * The feed frequently leaves `distanceInMeters` null but always carries
+ * coordinates, and "how far is it?" is the first thing an athlete asks about a
+ * hotel, so fall back to measuring it ourselves. Both paths are relative to the
+ * training anchor, since that is the coordinate the search was centred on.
+ */
+function distanceFromAnchor(anchor: TrainingAnchor, result: Stay22Result): number | undefined {
+  if (typeof result.location?.distanceInMeters === "number") {
+    return result.location.distanceInMeters;
+  }
+
+  const { lat, lng } = result.location?.coordinates ?? {};
+  if (typeof lat !== "number" || typeof lng !== "number") return undefined;
+
+  return Math.round(haversineKm(anchor, { latitude: lat, longitude: lng }) * 1000);
+}
+
 export function extractAid(link: string): string | undefined {
   try {
     return new URL(link).searchParams.get("aid") ?? undefined;
@@ -177,17 +202,19 @@ export interface Stay22LodgingResult {
 
 export async function fetchStay22Accommodations(options: {
   place: GeocodedPlace;
+  /** Where the training happens — the search centre, not the city centroid. */
+  anchor: TrainingAnchor;
   checkIn: string;
   checkOut: string;
   limit?: number;
 }): Promise<Stay22LodgingResult> {
-  const { place, checkIn, checkOut, limit = 8 } = options;
+  const { place, anchor, checkIn, checkOut, limit = 5 } = options;
   const currency = currencyForPlace(place);
 
   const response = await fetchJson<Stay22Response>(
     buildUrl(ACCOMMODATIONS_URL, {
-      lat: place.latitude,
-      lng: place.longitude,
+      lat: anchor.latitude,
+      lng: anchor.longitude,
       checkin: checkIn,
       checkout: checkOut,
       adults: 1,
@@ -242,11 +269,12 @@ export async function fetchStay22Accommodations(options: {
         supplier.total !== undefined
           ? { total: supplier.total, currency: response.meta?.currency ?? currency, nights }
           : undefined,
-      distanceMeters: result.location?.distanceInMeters ?? undefined,
+      distanceMeters: distanceFromAnchor(anchor, result),
     });
 
     if (mapped.length >= limit) break;
   }
 
-  return { options: mapped, aid: mapped[0] ? extractAid(mapped[0].bookingUrl) : undefined };
+  const aid = mapped[0] ? extractAid(mapped[0].bookingUrl) : undefined;
+  return { options: sortByPrice(mapped), aid };
 }

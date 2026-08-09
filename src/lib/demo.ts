@@ -1,5 +1,7 @@
-import { classifyDay } from "@/lib/conditions";
+import { resolveTrainingAnchor } from "@/lib/anchor";
+import { classifyDay, type MarineSource } from "@/lib/conditions";
 import { buildAllezLink } from "@/lib/lodging";
+import { sortByPrice } from "@/lib/stay22";
 import type {
   DayPlan,
   GeocodedPlace,
@@ -8,7 +10,7 @@ import type {
   Sport,
   Trip,
 } from "@/lib/types";
-import { addDaysIso, todayIso } from "@/lib/utils";
+import { addDaysIso, haversineKm, todayIso } from "@/lib/utils";
 
 export const DEMO_TRIP_ID = "demo-lisbon";
 
@@ -113,6 +115,22 @@ const DEMO_GROUNDING: LocalGrounding = {
       score: 0.86,
     },
   ],
+  transport: [
+    {
+      title: "Cascais line: Cais do Sodré to Carcavelos",
+      url: "https://www.cp.pt/passageiros/en/train-times/urban/lisbon/cascais",
+      content:
+        "Trains run from Cais do Sodré along the coast to Cascais every 12–20 minutes from around 05:30 to 01:30, reaching Carcavelos in roughly 25 minutes. The station is a 700 m walk from the beach. A Viva Viagem card covers the fare and can be topped up at any station machine.",
+      score: 0.93,
+    },
+    {
+      title: "Getting around Lisbon: metro, tram and bike hire",
+      url: "https://www.visitlisboa.com/en/practical-information/getting-around",
+      content:
+        "The metro covers the city centre and connects to the Cais do Sodré and Santa Apolónia rail terminals. GIRA docked bikes are widely available along the riverside, with docking stations at Cais do Sodré, Doca de Santo Amaro and Belém, which makes the flat riverside path easy to reach without a car.",
+      score: 0.87,
+    },
+  ],
   events: [
     {
       title: "Time Out Market late-night tastings return this week",
@@ -133,7 +151,8 @@ const DEMO_GROUNDING: LocalGrounding = {
     "best open water swimming spots and beaches in Lisbon this week",
     "best running routes and trails in Lisbon this week",
     "best road cycling routes and bike rental in Lisbon this week",
-    "local events, races and things to do near Lisbon",
+    "local events and things to do in Lisbon",
+    "Lisbon public transport getting around: metro, train, bus, bike hire",
   ],
   source: "tavily",
 };
@@ -147,6 +166,8 @@ const DEMO_PLAN_TEXT: Omit<DayPlan, "date">[] = [
       "Train back and eat properly at Time Out Market in Cais do Sodré, five minutes from the riverside path. Then keep it genuinely easy — legs up, rehydrate, and save the walking for tomorrow when the water is off the table.",
     evening:
       "Short shakeout on the riverside promenade toward Doca de Santo Amaro, then an early night: tomorrow's swell arrives before dawn and you'll want the morning for a run instead.",
+    travel:
+      "Cascais-line train from Cais do Sodré to Carcavelos: about 25 minutes, every 12–20 minutes, then a 700 m walk to the sand. Top up a Viva Viagem card at the station machine and leave by 07:30 to be in the water before the wind builds. Same line back, running until well after midnight, so the return is never tight.",
     safetyNote:
       "Wave height 0.42 m and sea temperature 20.1 °C both sit inside the safe band — the best swim window of your three days.",
     citedPlaces: ["Praia de Carcavelos", "Time Out Market", "Doca de Santo Amaro"],
@@ -159,6 +180,8 @@ const DEMO_PLAN_TEXT: Omit<DayPlan, "date">[] = [
       "If you need water work, swap to a pool session — 8 × 100 m holding an even effort keeps your feel for the water without fighting the shorebreak. Otherwise eat, then wander Alfama's cobbled squares, where the sardine festival is setting up for the evening.",
     evening:
       "Stay for the grilled sardines and fado in Alfama. The climbs back up through the neighbourhood count as active recovery, and the swell should drop overnight.",
+    travel:
+      "No coast trip today — stay in the city. Metro to Alto da Serafina or a 20 minute taxi gets you to the Monsanto entrance; on the way home the metro connects straight back to the centre for Alfama in the evening. Nothing today needs the train.",
     safetyNote:
       "Wave height 1.9 m is past the 1.2 m hard stop and gusts of 58 km/h exceed the 55 km/h cycling limit — both outdoor water and road sessions are off.",
     citedPlaces: ["Monsanto Forest Park", "Alto da Serafina", "Alfama"],
@@ -171,6 +194,8 @@ const DEMO_PLAN_TEXT: Omit<DayPlan, "date">[] = [
       "Air quality peaks at 112 AQI today, which is the day's real limiter, so skip the planned riverside tempo run and keep any second session indoors and easy. Refuel and spend the hot hours somewhere air-conditioned rather than on the exposed Belém path.",
     evening:
       "Last night — eat well near Cais do Sodré and pack wet kit last so it has the longest possible time to dry.",
+    travel:
+      "Ride out from the door if you are staying on the coast; otherwise take the first Cascais-line train to Oeiras with the bike and start there, about 20 minutes. Trains take bikes outside peak hours, so be on one before 07:00 or after 09:30 — and if the nortada beats you home, the train back from Cascais is the honest option.",
     safetyNote:
       "AQI 112 is over the 100 safe limit for running, so hard efforts move indoors; the ride stays on because gusts are back to 31 km/h.",
     citedPlaces: ["Estoril coastal cycleway", "Cascais", "Praia de Carcavelos", "Belém"],
@@ -190,7 +215,9 @@ const DEMO_LODGING: {
   snippet: string;
   rating: { value: number; count: number; stars: number };
   nightlyTotal: number;
-  distanceMeters: number;
+  /** Distances are measured from the swim spot, exactly as the live path does. */
+  latitude: number;
+  longitude: number;
 }[] = [
   {
     name: "Hotel Praia Mar",
@@ -201,7 +228,8 @@ const DEMO_LODGING: {
       "Beachfront in Carcavelos with a rooftop pool, two minutes to the sand and ten from the Cascais-line station — the shortest possible commute to the swim.",
     rating: { value: 8.4, count: 1863, stars: 4 },
     nightlyTotal: 402,
-    distanceMeters: 17800,
+    latitude: 38.6805,
+    longitude: -9.3378,
   },
   {
     name: "Riviera Hotel",
@@ -212,7 +240,8 @@ const DEMO_LODGING: {
       "Quiet Carcavelos hotel a short walk from the sheltered eastern end of the beach, with secure parking and somewhere to rinse and dry a wetsuit.",
     rating: { value: 8.0, count: 942, stars: 4 },
     nightlyTotal: 351,
-    distanceMeters: 18400,
+    latitude: 38.6795,
+    longitude: -9.3323,
   },
   {
     name: "Vila Galé Estoril",
@@ -223,7 +252,8 @@ const DEMO_LODGING: {
       "On the Estoril seafront beside the Marginal cycleway, which turns the 20 km coastal ride to Cascais into a ride-out-the-door affair.",
     rating: { value: 8.6, count: 2571, stars: 4 },
     nightlyTotal: 528,
-    distanceMeters: 21200,
+    latitude: 38.7053,
+    longitude: -9.396,
   },
   {
     name: "Pestana Palace Lisboa",
@@ -234,7 +264,20 @@ const DEMO_LODGING: {
       "Garden hotel in Alcântara, close to both the Tagus riverside running path and the Monsanto trail entrances, with a 25 m outdoor pool.",
     rating: { value: 9.1, count: 3104, stars: 5 },
     nightlyTotal: 861,
-    distanceMeters: 3900,
+    latitude: 38.705,
+    longitude: -9.1834,
+  },
+  {
+    name: "Lisboa Central Hostel",
+    search: "Lisboa Central Hostel",
+    provider: "Expedia",
+    address: "Rua Rodrigues Sampaio 160, Lisbon, Portugal",
+    snippet:
+      "Cheapest bed of the five and walking distance to the riverside running path, but the furthest from the water — the swim becomes a train ride each way.",
+    rating: { value: 9.2, count: 2273, stars: 0 },
+    nightlyTotal: 84,
+    latitude: 38.723,
+    longitude: -9.147,
   },
 ];
 
@@ -243,6 +286,9 @@ const DEMO_LODGING: {
  * The audio route falls back to a live ElevenLabs call when these are absent.
  */
 const DEMO_AUDIO_FILES = ["/audio/demo-lisbon-day-1.mp3", "/audio/demo-lisbon-day-2.mp3", "/audio/demo-lisbon-day-3.mp3"];
+
+/** Carcavelos, where a Lisbon open-water swim actually happens. */
+const DEMO_MARINE_SOURCE: MarineSource = { latitude: 38.68, longitude: -9.34, distanceKm: 18 };
 
 export function buildDemoTrip(startDate = todayIso()): Trip {
   const dates = DEMO_MEASUREMENTS.map((_, index) => addDaysIso(startDate, index));
@@ -253,10 +299,13 @@ export function buildDemoTrip(startDate = todayIso()): Trip {
       sports: DEMO_SPORTS,
       values: measurement.values,
       weatherCode: measurement.weatherCode,
-      marineSource: { latitude: 38.68, longitude: -9.34, distanceKm: 18 },
+      marineSource: DEMO_MARINE_SOURCE,
       airQualityProvider: "open-meteo",
     }),
   );
+
+  // Resolved by the live helper, so the demo cannot drift from real behaviour.
+  const anchor = resolveTrainingAnchor(DEMO_PLACE, DEMO_SPORTS, DEMO_MARINE_SOURCE);
 
   const plans: DayPlan[] = DEMO_PLAN_TEXT.map((plan, index) => ({
     ...plan,
@@ -268,26 +317,28 @@ export function buildDemoTrip(startDate = todayIso()): Trip {
   );
 
   const checkOut = addDaysIso(dates[0], dates.length);
-  const lodging: LodgingOption[] = DEMO_LODGING.map((entry) => ({
-    id: entry.search,
-    name: entry.name,
-    provider: entry.provider,
-    source: "stay22",
-    address: entry.address,
-    snippet: entry.snippet,
-    rating: entry.rating,
-    price: { total: entry.nightlyTotal, currency: "EUR", nights: dates.length },
-    distanceMeters: entry.distanceMeters,
-    // Resolved by name through Allez roam, so no hand-written OTA URL can rot.
-    bookingUrl: buildAllezLink({
-      name: entry.search,
-      sourceUrl: "",
-      provider: "roam",
-      place: DEMO_PLACE,
-      checkIn: dates[0],
-      checkOut,
-    }),
-  }));
+  const lodging: LodgingOption[] = sortByPrice(
+    DEMO_LODGING.map((entry) => ({
+      id: entry.search,
+      name: entry.name,
+      provider: entry.provider,
+      source: "stay22" as const,
+      address: entry.address,
+      snippet: entry.snippet,
+      rating: entry.rating,
+      price: { total: entry.nightlyTotal, currency: "EUR", nights: dates.length },
+      distanceMeters: Math.round(haversineKm(anchor, entry) * 1000),
+      // Resolved by name through Allez roam, so no hand-written OTA URL can rot.
+      bookingUrl: buildAllezLink({
+        name: entry.search,
+        sourceUrl: "",
+        provider: "roam",
+        origin: anchor,
+        checkIn: dates[0],
+        checkOut,
+      }),
+    })),
+  );
 
   return {
     id: DEMO_TRIP_ID,
@@ -303,6 +354,7 @@ export function buildDemoTrip(startDate = todayIso()): Trip {
     grounding: DEMO_GROUNDING,
     plans,
     lodging,
+    anchor,
     isDemo: true,
     demoAudioByDate,
     itinerarySource: "llm",

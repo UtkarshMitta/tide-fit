@@ -103,46 +103,21 @@ export default async function TripPage({ params }: { params: { id: string } }) {
           destination={trip.place.name}
           checkIn={trip.input.startDate}
           nights={trip.input.days}
+          anchor={trip.anchor}
         />
       </section>
 
       <section className="mt-8">
         <LodgingMap
-          latitude={trip.place.latitude}
-          longitude={trip.place.longitude}
+          latitude={trip.anchor?.latitude ?? trip.place.latitude}
+          longitude={trip.anchor?.longitude ?? trip.place.longitude}
           destination={trip.place.name}
           checkIn={trip.input.startDate}
           nights={trip.input.days}
           affiliateId={trip.stay22Aid}
+          anchorLabel={trip.anchor?.kind === "swim-spot" ? "your swim spot" : undefined}
         />
       </section>
-
-      {trip.grounding.source === "tavily" ? (
-        <section className="mt-8">
-          <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-500">
-            Sources behind this plan
-          </h2>
-          <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-            {[...trip.grounding.spots, ...trip.grounding.events].map((result) => (
-              <li key={result.url}>
-                <a
-                  href={result.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="card block px-4 py-3 transition hover:border-white/20 hover:bg-white/[0.06]"
-                >
-                  <span className="line-clamp-1 text-sm font-medium text-slate-200">
-                    {result.title}
-                  </span>
-                  <span className="line-clamp-1 text-xs text-slate-500">
-                    {new URL(result.url).hostname.replace(/^www\./, "")}
-                  </span>
-                </a>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
 
       <footer className="mt-12 border-t border-white/10 pt-6">
         <p className="max-w-3xl text-xs leading-relaxed text-slate-500">

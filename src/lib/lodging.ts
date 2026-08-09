@@ -4,7 +4,7 @@ import { publicEnv } from "@/lib/env.public";
 import { serverEnv } from "@/lib/env";
 import { softFetch } from "@/lib/http";
 import { fetchStay22Accommodations } from "@/lib/stay22";
-import type { GeocodedPlace, LodgingOption, Sport } from "@/lib/types";
+import type { GeocodedPlace, LodgingOption, Sport, TrainingAnchor } from "@/lib/types";
 import { addDaysIso } from "@/lib/utils";
 
 /**
@@ -55,7 +55,7 @@ const PROPERTY_URL_PATTERNS: RegExp[] = [
   /vrbo\.com\/\d+[a-z]*(?:$|[?#/])/i,
 ];
 
-const MAX_OPTIONS = 6;
+const MAX_OPTIONS = 5;
 
 export function isPropertyPage(url: string): boolean {
   return PROPERTY_URL_PATTERNS.some((pattern) => pattern.test(url));
@@ -137,19 +137,20 @@ export function buildAllezLink(option: {
   name: string;
   sourceUrl: string;
   provider: string;
-  place: GeocodedPlace;
+  /** Coordinate roam resolves the property against — the training anchor. */
+  origin: { latitude: number; longitude: number };
   checkIn: string;
   checkOut: string;
 }): string {
-  const { name, sourceUrl, provider, place, checkIn, checkOut } = option;
+  const { name, sourceUrl, provider, origin, checkIn, checkOut } = option;
   const url = new URL(`${ALLEZ_BASE}/${provider}`);
   url.searchParams.set("aid", publicEnv.stay22AffiliateId);
 
   if (provider === "roam") {
     // Roam resolves a destination itself and cannot take a direct OTA link.
     url.searchParams.set("hotelname", name);
-    url.searchParams.set("lat", String(place.latitude));
-    url.searchParams.set("lng", String(place.longitude));
+    url.searchParams.set("lat", String(origin.latitude));
+    url.searchParams.set("lng", String(origin.longitude));
   } else {
     url.searchParams.set("link", sourceUrl);
   }
@@ -166,28 +167,37 @@ export interface LodgingResult {
   aid?: string;
 }
 
-export async function getLodgingOptions(
-  destination: string,
-  place: GeocodedPlace,
-  startDate: string,
-  days: number,
-  sports: Sport[],
-): Promise<LodgingResult> {
+export async function getLodgingOptions(options: {
+  destination: string;
+  place: GeocodedPlace;
+  /** Stays are found near where the training happens, not the city centroid. */
+  anchor: TrainingAnchor;
+  startDate: string;
+  days: number;
+  sports: Sport[];
+}): Promise<LodgingResult> {
+  const { destination, place, anchor, startDate, days, sports } = options;
   const checkOut = addDaysIso(startDate, Math.max(days, 1));
 
   if (serverEnv.stay22ApiKey) {
     const live = await softFetch("Stay22 accommodations", () =>
-      fetchStay22Accommodations({ place, checkIn: startDate, checkOut, limit: MAX_OPTIONS }),
+      fetchStay22Accommodations({
+        place,
+        anchor,
+        checkIn: startDate,
+        checkOut,
+        limit: MAX_OPTIONS,
+      }),
     );
     if (live && live.options.length > 0) return live;
   }
 
-  return { options: await searchLodgingViaTavily(destination, place, startDate, days, sports) };
+  return { options: await searchLodgingViaTavily(destination, anchor, startDate, days, sports) };
 }
 
 async function searchLodgingViaTavily(
   destination: string,
-  place: GeocodedPlace,
+  anchor: TrainingAnchor,
   startDate: string,
   days: number,
   sports: Sport[],
@@ -236,7 +246,14 @@ async function searchLodgingViaTavily(
       provider: label,
       source: "tavily",
       snippet: result.content.slice(0, 220).trim(),
-      bookingUrl: buildAllezLink({ name, sourceUrl: result.url, provider, place, checkIn, checkOut }),
+      bookingUrl: buildAllezLink({
+        name,
+        sourceUrl: result.url,
+        provider,
+        origin: anchor,
+        checkIn,
+        checkOut,
+      }),
     });
 
     if (options.length >= MAX_OPTIONS) break;

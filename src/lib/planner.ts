@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { resolveTrainingAnchor } from "@/lib/anchor";
 import { geocodeDestination, getTripConditions, placeLabel } from "@/lib/conditions";
 import { buildDemoTrip } from "@/lib/demo";
 import { serverEnv } from "@/lib/env";
@@ -53,23 +54,35 @@ export async function planTrip(input: TripInput): Promise<Trip> {
     );
   }
 
-  const [conditionsBundle, grounding, lodging, trainingLoad] = await Promise.all([
+  const [conditionsBundle, grounding, trainingLoad] = await Promise.all([
     getTripConditions(place, input.startDate, input.days, input.sports),
     getLocalGrounding(input.destination, input.startDate, input.sports),
-    getLodgingOptions(input.destination, place, input.startDate, input.days, input.sports).catch(
-      (): LodgingResult => ({ options: [] }),
-    ),
     getTrainingLoad().catch(() => undefined),
   ]);
 
-  const { plans, source } = await generateItinerary({
-    place,
-    destinationLabel: placeLabel(place),
-    sports: input.sports,
-    conditions: conditionsBundle.conditions,
-    grounding,
-    trainingLoad,
-  });
+  // Lodging waits on conditions because the marine probe is what tells us where
+  // the swim actually happens, and that is the point stays are searched around.
+  const anchor = resolveTrainingAnchor(place, input.sports, conditionsBundle.marineSource);
+
+  const [{ plans, source }, lodging] = await Promise.all([
+    generateItinerary({
+      place,
+      destinationLabel: placeLabel(place),
+      sports: input.sports,
+      anchor,
+      conditions: conditionsBundle.conditions,
+      grounding,
+      trainingLoad,
+    }),
+    getLodgingOptions({
+      destination: input.destination,
+      place,
+      anchor,
+      startDate: input.startDate,
+      days: input.days,
+      sports: input.sports,
+    }).catch((): LodgingResult => ({ options: [] })),
+  ]);
 
   return {
     id: randomUUID(),
@@ -80,6 +93,7 @@ export async function planTrip(input: TripInput): Promise<Trip> {
     grounding,
     plans,
     lodging: lodging.options,
+    anchor,
     stay22Aid: lodging.aid,
     trainingLoad,
     itinerarySource: source,

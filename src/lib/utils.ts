@@ -73,6 +73,23 @@ export function haversineKm(
   return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
 }
 
+const COMPASS = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];
+
+/** Rough compass direction, so "18 km west of Lisbon" beats "18 km away". */
+export function compassDirection(
+  from: { latitude: number; longitude: number },
+  to: { latitude: number; longitude: number },
+): string {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLon = toRad(to.longitude - from.longitude);
+  const lat1 = toRad(from.latitude);
+  const lat2 = toRad(to.latitude);
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  const degrees = (Math.atan2(y, x) * 180) / Math.PI;
+  return COMPASS[Math.round(((degrees + 360) % 360) / 45) % 8];
+}
+
 /** Open-Meteo rejects bursts of parallel requests, so probe batches stay small. */
 export async function mapWithConcurrency<T, R>(
   items: T[],
@@ -91,6 +108,23 @@ export async function mapWithConcurrency<T, R>(
 
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return results;
+}
+
+export function formatDistance(meters: number): string {
+  return meters < 950 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`;
+}
+
+/**
+ * Rough door-to-door estimate from straight-line distance: walking pace for
+ * anything close, otherwise urban driving. Deliberately approximate — it exists
+ * to answer "can I walk to the start of my session?" not to route a journey.
+ */
+export function travelEstimate(meters: number): string {
+  const km = meters / 1000;
+  if (km <= 2.5) {
+    return `~${Math.max(1, Math.round((km / 4.8) * 60))} min walk`;
+  }
+  return `~${Math.max(5, Math.round((km / 28) * 60))} min drive`;
 }
 
 /** Degrees and percentages sit tight against the number; word units read better spaced. */

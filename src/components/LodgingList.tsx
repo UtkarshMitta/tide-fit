@@ -1,5 +1,5 @@
-import type { LodgingOption } from "@/lib/types";
-import { addDaysIso, formatDayLabel } from "@/lib/utils";
+import type { LodgingOption, TrainingAnchor } from "@/lib/types";
+import { addDaysIso, cn, formatDistance, formatDayLabel, travelEstimate } from "@/lib/utils";
 
 /**
  * Live inventory from Stay22's Accommodations API when a key is configured,
@@ -19,8 +19,13 @@ function formatPrice(total: number, currency: string): string {
   }
 }
 
-function formatDistance(meters: number): string {
-  return meters < 1000 ? `${Math.round(meters)} m from centre` : `${(meters / 1000).toFixed(1)} km from centre`;
+function shortDate(isoDate: string): string {
+  return new Date(`${isoDate}T12:00:00Z`).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function Rating({ rating }: { rating: NonNullable<LodgingOption["rating"]> }) {
@@ -43,16 +48,20 @@ export function LodgingList({
   destination,
   checkIn,
   nights,
+  anchor,
 }: {
   options: LodgingOption[];
   destination: string;
   checkIn: string;
   nights: number;
+  /** Absent on trips saved before distances were measured from training spots. */
+  anchor?: TrainingAnchor;
 }) {
   if (options.length === 0) return null;
 
   const checkOut = addDaysIso(checkIn, Math.max(nights, 1));
   const isLive = options.some((option) => option.source === "stay22");
+  const reference = anchor?.label ?? `${destination} centre`;
 
   return (
     <section className="card overflow-hidden">
@@ -60,14 +69,27 @@ export function LodgingList({
         <div>
           <h2 className="text-lg font-semibold text-slate-50">Where to stay in {destination}</h2>
           <p className="text-sm text-slate-400">
-            {formatDayLabel(checkIn)} → {formatDayLabel(checkOut)} · {nights}{" "}
-            {nights === 1 ? "night" : "nights"} · {options.length} options
+            Top {options.length}, cheapest first · {formatDayLabel(checkIn)} →{" "}
+            {formatDayLabel(checkOut)} · {nights} {nights === 1 ? "night" : "nights"}
           </p>
         </div>
         <span className="text-xs text-slate-500">
           {isLive ? "Live prices from Stay22" : "Found via Tavily · booked via Stay22"}
         </span>
       </div>
+
+      {anchor ? (
+        <p
+          className={cn(
+            "border-b border-white/10 px-5 py-3 text-xs leading-relaxed",
+            anchor.kind === "swim-spot"
+              ? "bg-tide-500/[0.07] text-tide-100"
+              : "bg-white/[0.02] text-slate-400",
+          )}
+        >
+          {anchor.note}
+        </p>
+      ) : null}
 
       <ul className="divide-y divide-white/5">
         {options.map((option) => (
@@ -97,13 +119,37 @@ export function LodgingList({
 
               <p className="mt-1 truncate text-xs text-slate-500">
                 {option.address ?? option.snippet}
-                {option.distanceMeters !== undefined
-                  ? ` · ${formatDistance(option.distanceMeters)}`
-                  : ""}
               </p>
 
+              <dl className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                {option.distanceMeters !== undefined ? (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      <dt className="text-slate-500">Distance</dt>
+                      <dd className="font-medium text-slate-300">
+                        {formatDistance(option.distanceMeters)} from {reference}
+                      </dd>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <dt className="text-slate-500">Travel</dt>
+                      <dd className="font-medium text-slate-300">
+                        {travelEstimate(option.distanceMeters)}
+                      </dd>
+                    </div>
+                  </>
+                ) : null}
+                <div className="flex items-center gap-1.5">
+                  <dt className="text-slate-500">Check-in</dt>
+                  <dd className="font-medium text-slate-300">{shortDate(checkIn)}</dd>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <dt className="text-slate-500">Check-out</dt>
+                  <dd className="font-medium text-slate-300">{shortDate(checkOut)}</dd>
+                </div>
+              </dl>
+
               {option.address && option.snippet ? (
-                <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">
+                <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-slate-400">
                   {option.snippet}
                 </p>
               ) : null}

@@ -25,6 +25,7 @@ export function AudioBriefing({
   const [status, setStatus] = useState<Status>("idle");
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [devicePaused, setDevicePaused] = useState(false);
   const objectUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -44,9 +45,34 @@ export function AudioBriefing({
     const utterance = new SpeechSynthesisUtterance(script);
     utterance.rate = 1.02;
     utterance.pitch = 1;
+    utterance.onend = () => {
+      setStatus("idle");
+      setDevicePaused(false);
+      setMessage(null);
+    };
     window.speechSynthesis.speak(utterance);
+    setDevicePaused(false);
     setStatus("device-voice");
     setMessage("Using your device voice — add ELEVENLABS_API_KEY for the studio narration.");
+  }
+
+  /** The device voice has no player chrome of its own, so we supply the controls. */
+  function toggleDeviceVoice() {
+    const synth = window.speechSynthesis;
+    if (synth.paused) {
+      synth.resume();
+      setDevicePaused(false);
+    } else {
+      synth.pause();
+      setDevicePaused(true);
+    }
+  }
+
+  function stopDeviceVoice() {
+    window.speechSynthesis.cancel();
+    setDevicePaused(false);
+    setStatus("idle");
+    setMessage(null);
   }
 
   async function loadBriefing() {
@@ -96,12 +122,41 @@ export function AudioBriefing({
           <p className="text-sm font-semibold text-tide-100">Morning voice briefing</p>
           <p className="text-xs text-slate-400">
             {status === "ready"
-              ? "Narrated by ElevenLabs"
-              : "Hear the day read out before you head out"}
+              ? "Narrated by ElevenLabs — pause any time"
+              : status === "device-voice"
+                ? devicePaused
+                  ? "Paused"
+                  : "Reading your day aloud"
+                : "Hear the day read out before you head out"}
           </p>
         </div>
 
-        {status !== "ready" ? (
+        {status === "device-voice" ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleDeviceVoice}
+              className="btn-ghost border-tide-400/40 text-tide-100 hover:border-tide-300"
+            >
+              {devicePaused ? (
+                <>
+                  <span aria-hidden>▶</span> Resume
+                </>
+              ) : (
+                <>
+                  <span aria-hidden>❙❙</span> Pause
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={stopDeviceVoice}
+              className="btn-ghost border-white/15 text-slate-300 hover:border-white/30"
+            >
+              <span aria-hidden>■</span> Stop
+            </button>
+          </div>
+        ) : status !== "ready" ? (
           <button
             type="button"
             onClick={loadBriefing}
