@@ -115,7 +115,9 @@ export default async function TripPage({ params }: { params: { id: string } }) {
           checkIn={trip.input.startDate}
           nights={trip.input.days}
           affiliateId={trip.stay22Aid}
-          anchorLabel={trip.anchor?.kind === "swim-spot" ? "your swim spot" : undefined}
+          anchorLabel={
+            trip.anchor?.kind === "training-spot" ? trip.anchor.label : undefined
+          }
         />
       </section>
 

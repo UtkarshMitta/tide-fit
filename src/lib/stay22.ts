@@ -170,20 +170,22 @@ export function sortByPrice(options: LodgingOption[]): LodgingOption[] {
 }
 
 /**
- * The feed frequently leaves `distanceInMeters` null but always carries
- * coordinates, and "how far is it?" is the first thing an athlete asks about a
- * hotel, so fall back to measuring it ourselves. Both paths are relative to the
- * training anchor, since that is the coordinate the search was centred on.
+ * Always measure against the training anchor ourselves. The API's
+ * `distanceInMeters` is usually relative to the search lat/lng (which is the
+ * anchor), but we prefer haversine so a missing or oddly-referenced API value
+ * can never quietly report distance from the city centre instead.
  */
 function distanceFromAnchor(anchor: TrainingAnchor, result: Stay22Result): number | undefined {
+  const { lat, lng } = result.location?.coordinates ?? {};
+  if (typeof lat === "number" && typeof lng === "number") {
+    return Math.round(haversineKm(anchor, { latitude: lat, longitude: lng }) * 1000);
+  }
+
   if (typeof result.location?.distanceInMeters === "number") {
     return result.location.distanceInMeters;
   }
 
-  const { lat, lng } = result.location?.coordinates ?? {};
-  if (typeof lat !== "number" || typeof lng !== "number") return undefined;
-
-  return Math.round(haversineKm(anchor, { latitude: lat, longitude: lng }) * 1000);
+  return undefined;
 }
 
 export function extractAid(link: string): string | undefined {

@@ -2,15 +2,16 @@
  * Manual check for the lodging pipeline against live APIs.
  * Run with: npm run check:lodging
  *
- * This runs the real sequence — conditions, then the training anchor derived
- * from the marine probe, then lodging — because the whole point is that stays
- * are found near where the training happens. Denver is in the list on purpose:
- * it is the no-open-water edge case, where the anchor must fall back to the city
- * centre and say so.
+ * This runs the real sequence — conditions, grounding, training anchor (named
+ * spot when one geocodes, otherwise centre), then lodging — because the whole
+ * point is that stays are found near where the training happens. Denver is in
+ * the list on purpose: it is the no-open-water edge case, where the anchor must
+ * fall back to the city centre and say so.
  */
 import { resolveTrainingAnchor } from "@/lib/anchor";
 import { getTripConditions } from "@/lib/conditions";
 import { getLodgingOptions } from "@/lib/lodging";
+import { getLocalGrounding, trainingSpotNames } from "@/lib/search";
 import type { GeocodedPlace, Sport } from "@/lib/types";
 import { formatDistance, travelEstimate } from "@/lib/utils";
 
@@ -55,8 +56,19 @@ const PLACES: { place: GeocodedPlace; sports: Sport[] }[] = [
 
 async function main() {
   for (const { place, sports } of PLACES) {
-    const { marineSource } = await getTripConditions(place, START_DATE, DAYS, sports);
-    const anchor = resolveTrainingAnchor(place, sports, marineSource);
+    const [{ marineSource }, grounding] = await Promise.all([
+      getTripConditions(place, START_DATE, DAYS, sports),
+      getLocalGrounding(place.name, START_DATE, sports),
+    ]);
+
+    const spotNames = trainingSpotNames(grounding.spots, sports);
+
+    const anchor = await resolveTrainingAnchor({
+      place,
+      sports,
+      marineSource,
+      spotNames,
+    });
 
     const { options, aid } = await getLodgingOptions({
       destination: place.name,
@@ -68,7 +80,8 @@ async function main() {
     });
 
     console.log(`\n### ${place.name} (${sports.join(", ")}) — ${options.length} stays, aid=${aid ?? "n/a"}`);
-    console.log(`    anchor: ${anchor.kind} @ ${anchor.latitude.toFixed(4)},${anchor.longitude.toFixed(4)}`);
+    console.log(`    spot names tried: ${spotNames.slice(0, 4).join(", ") || "(none)"}`);
+    console.log(`    anchor: ${anchor.kind} "${anchor.label}" @ ${anchor.latitude.toFixed(4)},${anchor.longitude.toFixed(4)}`);
     console.log(`    ${anchor.note}`);
 
     for (const option of options) {
@@ -78,7 +91,7 @@ async function main() {
       const distance =
         option.distanceMeters === undefined
           ? "distance unknown"
-          : `${formatDistance(option.distanceMeters)} · ${travelEstimate(option.distanceMeters)}`;
+          : `${formatDistance(option.distanceMeters)} from ${anchor.label} · ${travelEstimate(option.distanceMeters)}`;
       console.log(`- ${option.name} [${option.provider}] ${price} · ${distance}`);
     }
   }

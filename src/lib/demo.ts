@@ -1,4 +1,3 @@
-import { resolveTrainingAnchor } from "@/lib/anchor";
 import { classifyDay, type MarineSource } from "@/lib/conditions";
 import { buildAllezLink } from "@/lib/lodging";
 import { sortByPrice } from "@/lib/stay22";
@@ -8,6 +7,7 @@ import type {
   LocalGrounding,
   LodgingOption,
   Sport,
+  TrainingAnchor,
   Trip,
 } from "@/lib/types";
 import { addDaysIso, haversineKm, todayIso } from "@/lib/utils";
@@ -290,6 +290,20 @@ const DEMO_AUDIO_FILES = ["/audio/demo-lisbon-day-1.mp3", "/audio/demo-lisbon-da
 /** Carcavelos, where a Lisbon open-water swim actually happens. */
 const DEMO_MARINE_SOURCE: MarineSource = { latitude: 38.68, longitude: -9.34, distanceKm: 18 };
 
+/**
+ * Canned training anchor matching what the live resolver produces for Lisbon
+ * swimming: the named beach, not the city centroid. Kept sync so the demo trip
+ * never depends on a geocoding round-trip.
+ */
+const DEMO_ANCHOR: TrainingAnchor = {
+  latitude: DEMO_MARINE_SOURCE.latitude,
+  longitude: DEMO_MARINE_SOURCE.longitude,
+  kind: "training-spot",
+  label: "Praia de Carcavelos",
+  note: "Your main training spot is Praia de Carcavelos, about 18 km west of Lisbon centre — stays are searched and measured from there, not from the city centre.",
+  distanceFromCentreKm: 18,
+};
+
 export function buildDemoTrip(startDate = todayIso()): Trip {
   const dates = DEMO_MEASUREMENTS.map((_, index) => addDaysIso(startDate, index));
 
@@ -304,8 +318,7 @@ export function buildDemoTrip(startDate = todayIso()): Trip {
     }),
   );
 
-  // Resolved by the live helper, so the demo cannot drift from real behaviour.
-  const anchor = resolveTrainingAnchor(DEMO_PLACE, DEMO_SPORTS, DEMO_MARINE_SOURCE);
+  const anchor = DEMO_ANCHOR;
 
   const plans: DayPlan[] = DEMO_PLAN_TEXT.map((plan, index) => ({
     ...plan,

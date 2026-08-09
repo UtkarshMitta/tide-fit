@@ -6,7 +6,7 @@ import { buildDemoTrip } from "@/lib/demo";
 import { serverEnv } from "@/lib/env";
 import { generateItinerary } from "@/lib/itinerary";
 import { getLodgingOptions, type LodgingResult } from "@/lib/lodging";
-import { getLocalGrounding } from "@/lib/search";
+import { getLocalGrounding, getTransportGrounding, trainingSpotNames } from "@/lib/search";
 import { getTrainingLoad } from "@/lib/strava";
 import { SPORTS, type Sport, type Trip, type TripInput } from "@/lib/types";
 import { todayIso } from "@/lib/utils";
@@ -60,9 +60,32 @@ export async function planTrip(input: TripInput): Promise<Trip> {
     getTrainingLoad().catch(() => undefined),
   ]);
 
-  // Lodging waits on conditions because the marine probe is what tells us where
-  // the swim actually happens, and that is the point stays are searched around.
-  const anchor = resolveTrainingAnchor(place, input.sports, conditionsBundle.marineSource);
+  // Named spots from search + the marine probe together decide where lodging
+  // and travel advice are centred. Without a resolvable spot we fall back to
+  // the city centre and say so — never invent a fake training coordinate.
+  const spotNames = trainingSpotNames(grounding.spots, input.sports);
+
+  const anchor = await resolveTrainingAnchor({
+    place,
+    sports: input.sports,
+    marineSource: conditionsBundle.marineSource,
+    spotNames,
+  });
+
+  const transportNear =
+    anchor.kind === "training-spot" && !anchor.label.startsWith("the ")
+      ? anchor.label
+      : anchor.kind === "training-spot"
+        ? "the coast / open water"
+        : undefined;
+
+  const transport = await getTransportGrounding(input.destination, transportNear);
+  grounding.transport = transport.results;
+  grounding.queries = [...grounding.queries, transport.query];
+  if (transport.answer) {
+    grounding.answer = [grounding.answer, transport.answer].filter(Boolean).join(" ").slice(0, 1400);
+  }
+  if (grounding.transport.length > 0) grounding.source = "tavily";
 
   const [{ plans, source }, lodging] = await Promise.all([
     generateItinerary({

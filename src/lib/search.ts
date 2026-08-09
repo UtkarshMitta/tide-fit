@@ -87,8 +87,8 @@ export async function getLocalGrounding(
 ): Promise<LocalGrounding> {
   const spotQueries = sports.map((sport) => buildSpotQuery(sport, destination));
   const eventsQuery = buildEventsQuery(destination, startDate);
-  const transportQuery = buildTransportQuery(destination);
-  const queries = [...spotQueries, eventsQuery, transportQuery];
+  // Transport is fetched later, once we know the training spot it has to reach.
+  const queries = [...spotQueries, eventsQuery];
 
   if (!serverEnv.tavilyApiKey) {
     return { spots: [], events: [], transport: [], queries, source: "fallback" };
@@ -106,35 +106,60 @@ export async function getLocalGrounding(
       }),
     );
 
-  const [spotResponses, eventsResponse, transportResponse] = await Promise.all([
+  const [spotResponses, eventsResponse] = await Promise.all([
     Promise.all(spotQueries.map((query) => search(query, { includeAnswer: "basic" }))),
     // Not `topic: "news"`: the word "events" plus a date reads as current
     // affairs to a news index, which returned US election coverage for a query
     // about Lisbon. General search finds the event listings we actually want.
     search(eventsQuery, { includeAnswer: "basic" }),
-    search(transportQuery, { includeAnswer: "basic" }),
   ]);
 
   const spots = dedupeByUrl(
     spotResponses.flatMap((response) => (response?.results ?? []).map(toSearchResult)),
   );
   const events = dedupeByUrl((eventsResponse?.results ?? []).map(toSearchResult));
-  const transport = dedupeByUrl((transportResponse?.results ?? []).map(toSearchResult));
 
-  const answer = [
-    ...spotResponses.map((response) => response?.answer),
-    eventsResponse?.answer,
-    transportResponse?.answer,
-  ]
+  const answer = [...spotResponses.map((response) => response?.answer), eventsResponse?.answer]
     .filter((value): value is string => Boolean(value))
     .join(" ")
     .slice(0, 1400);
 
-  if (spots.length === 0 && events.length === 0 && transport.length === 0) {
+  if (spots.length === 0 && events.length === 0) {
     return { spots: [], events: [], transport: [], queries, source: "fallback" };
   }
 
-  return { answer: answer || undefined, spots, events, transport, queries, source: "tavily" };
+  return { answer: answer || undefined, spots, events, transport: [], queries, source: "tavily" };
+}
+
+/**
+ * Second-pass search once the training anchor is known. Asking "how do I get to
+ * Carcavelos" only makes sense after we know Carcavelos is the session.
+ */
+export async function getTransportGrounding(
+  destination: string,
+  nearLabel?: string,
+): Promise<{ results: SearchResult[]; query: string; answer?: string }> {
+  const query = buildTransportQuery(destination, nearLabel);
+
+  if (!serverEnv.tavilyApiKey) {
+    return { results: [], query };
+  }
+
+  const client = tavily({ apiKey: serverEnv.tavilyApiKey });
+  const response = await softFetch(`Tavily search "${query}"`, () =>
+    client.search(query, {
+      maxResults: MAX_RESULTS_PER_QUERY,
+      searchDepth: "basic",
+      excludeDomains: EXCLUDED_DOMAINS,
+      includeAnswer: "basic",
+    }),
+  );
+
+  return {
+    query,
+    results: dedupeByUrl((response?.results ?? []).map(toSearchResult)),
+    answer: response?.answer || undefined,
+  };
 }
 
 const SOURCE_SEGMENT =
@@ -145,7 +170,7 @@ const SOURCE_SEGMENT =
  * Calendar & Tickets" is a directory, not something to go and do.
  */
 const NOT_A_PLACE_NAME =
-  /^\d|\b(best|top|ultimate|guide|guides|things to do|where to|how to|complete|itinerary|tips|everything|reviews?|events?|calendar|tickets?|listings?|directory|schedule|agenda|what'?s on)\b|\?/i;
+  /^\d|\b(best|top|ultimate|guide|guides|things to do|where to|how to|complete|itinerary|tips|everything|reviews?|events?|calendar|tickets?|listings?|directory|schedule|agenda|what'?s on|swimming|running|cycling|hiking|routes?|spots?|friends?)\b|\?/i;
 /** Untitled pages and site landing pages carry no name worth reading out. */
 const PLACEHOLDER_TITLE = /^(untitled|home|homepage|index|welcome|page not found)\b/i;
 
@@ -212,6 +237,75 @@ export function placeNameFromResult(result: SearchResult): string | undefined {
   if (brand.length >= 5 && (brand.includes(key) || key.includes(brand))) return undefined;
 
   return candidate;
+}
+
+/**
+ * Listicle titles rarely contain a venue name, but the body almost always does
+ * ("Praia de Carcavelos", "Monsanto Forest Park"). These patterns pull the
+ * places an athlete can actually go; everything else is ignored.
+ */
+const CONTENT_PLACE_PATTERNS: RegExp[] = [
+  // Spaces only (not newlines) so "Praia das Maçãs\nPraia de Guincho" does not
+  // glue into "Praia das Maçãs Praia".
+  /\bPraia(?: d(?:e|a|o|as|os))? [A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚáéíóúãõçñ'-]+(?: [A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚáéíóúãõçñ'-]+){0,2}/g,
+  /\bPlage(?: de)? [A-ZÁÉÍÓÚ][\wÁÉÍÓÚáéíóúàèùâêîôûç'-]+(?: [A-ZÁÉÍÓÚ][\wÁÉÍÓÚáéíóúàèùâêîôûç'-]+){0,2}/g,
+  /\b(?:Parque|Park) [A-ZÁÉÍÓÚ][\wÁÉÍÓÚáéíóúãõç'-]+(?: [A-ZÁÉÍÓÚ][\wÁÉÍÓÚáéíóúãõç'-]+){0,2}/g,
+  /\b[A-Z][a-zÁÉÍÓÚáéíóúãõç]+(?: [A-Z][a-zÁÉÍÓÚáéíóúãõç]+){0,2} (?:Beach|Trail|Forest Park|Park|Reservoir|Lake|Bay|Cove|Point|Marina)\b/g,
+];
+
+function placeNamesFromContent(result: SearchResult): string[] {
+  const text = `${result.title}. ${result.content}`;
+  const found: string[] = [];
+
+  for (const pattern of CONTENT_PLACE_PATTERNS) {
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(text)) !== null) {
+      const name = match[0]
+        .replace(/\s+/g, " ")
+        .replace(/\s+(praia|plage|beach)$/i, "")
+        .trim();
+      if (name.split(/\s+/).length > MAX_NAME_WORDS) continue;
+      if (NOT_A_PLACE_NAME.test(name) || PROSE_WORDS.test(name)) continue;
+      found.push(name);
+    }
+  }
+
+  return found;
+}
+
+const WATER_SPOT =
+  /\b(praia|plage|beach|bay|cove|lake|reservoir|marina|harbour|harbor)\b/i;
+
+/**
+ * Ordered unique place names for the training-anchor resolver: title hits
+ * first (rare but high quality), then names scraped from the body. When the
+ * trip includes swimming, water venues are promoted so a beach beats a
+ * trailhead that happened to appear earlier in the same article.
+ */
+export function trainingSpotNames(results: SearchResult[], sports: Sport[] = []): string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+
+  const push = (name: string | undefined) => {
+    if (!name) return;
+    const key = normalise(name);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    ordered.push(name);
+  };
+
+  for (const result of results) push(placeNameFromResult(result));
+  for (const result of results) {
+    for (const name of placeNamesFromContent(result)) push(name);
+  }
+
+  if (!sports.includes("swimming")) return ordered;
+
+  return ordered
+    .map((name, index) => ({ name, index, water: WATER_SPOT.test(name) }))
+    .sort((a, b) => Number(b.water) - Number(a.water) || a.index - b.index)
+    .map((entry) => entry.name);
 }
 
 /** Renders grounding as the citation block handed to the itinerary model. */

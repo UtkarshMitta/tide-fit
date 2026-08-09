@@ -113,22 +113,28 @@ export function cleanPropertyName(title: string): string {
 
 /**
  * Athletes care where they sleep relative to where they train, so the area is
- * biased by the sports in focus rather than defaulting to the city centre.
- *
- * Phrasing matters as much as domain scoping: "hotels near the beach in Lisbon"
- * returns ranked listicles, while naming a property attribute and "reviews"
- * pulls individual property pages.
+ * biased by the training anchor (or sport) rather than defaulting to the city
+ * centre. Phrasing matters as much as domain scoping: "hotels near the beach
+ * in Lisbon" returns ranked listicles, while naming a property attribute and
+ * "reviews" pulls individual property pages.
  */
-function lodgingArea(sports: Sport[]): string {
+function lodgingArea(sports: Sport[], anchor?: TrainingAnchor): string {
+  if (anchor?.kind === "training-spot" && !anchor.label.startsWith("the ")) {
+    return `near ${anchor.label}`;
+  }
   if (sports.includes("swimming")) return "near the beach";
   if (sports.includes("hiking")) return "near the hiking trails";
   if (sports.includes("cycling")) return "with bike storage";
   return "near the city centre";
 }
 
-export function buildLodgingQueries(destination: string, sports: Sport[]): string[] {
+export function buildLodgingQueries(
+  destination: string,
+  sports: Sport[],
+  anchor?: TrainingAnchor,
+): string[] {
   return [
-    `best hotel to stay ${lodgingArea(sports)} in ${destination} reviews prices`,
+    `best hotel to stay ${lodgingArea(sports, anchor)} in ${destination} reviews prices`,
     `${destination} hotel reviews rooms and prices`,
   ];
 }
@@ -206,7 +212,7 @@ async function searchLodgingViaTavily(
 
   const client = tavily({ apiKey: serverEnv.tavilyApiKey });
   const responses = await Promise.all(
-    buildLodgingQueries(destination, sports).map((query) =>
+    buildLodgingQueries(destination, sports, anchor).map((query) =>
       softFetch(`Tavily lodging search "${query}"`, () =>
         client.search(query, {
           maxResults: 10,

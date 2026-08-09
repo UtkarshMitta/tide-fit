@@ -82,6 +82,39 @@ export async function geocodeDestination(query: string): Promise<GeocodedPlace |
   };
 }
 
+/**
+ * Resolves a named venue near a known point. Destination geocoding sorts by
+ * population, which would always return the city itself for "Monsanto Lisbon";
+ * this one prefers the closest hit within `maxKm` so a beach or trailhead wins.
+ */
+export async function geocodeNear(
+  query: string,
+  near: { latitude: number; longitude: number },
+  maxKm = 40,
+): Promise<{ name: string; latitude: number; longitude: number; distanceKm: number } | null> {
+  const trimmed = query.trim();
+  if (!trimmed) return null;
+
+  const data = await softFetch(`geocode "${trimmed}"`, () =>
+    fetchJson<GeocodingResponse>(
+      buildUrl(GEOCODING_URL, { name: trimmed, count: 8, language: "en", format: "json" }),
+    ),
+  );
+  if (!data?.results?.length) return null;
+
+  const ranked = data.results
+    .map((result) => ({
+      name: result.name,
+      latitude: result.latitude,
+      longitude: result.longitude,
+      distanceKm: haversineKm(near, result),
+    }))
+    .filter((result) => result.distanceKm <= maxKm)
+    .sort((a, b) => a.distanceKm - b.distanceKm);
+
+  return ranked[0] ?? null;
+}
+
 export function placeLabel(place: GeocodedPlace): string {
   return [place.name, place.admin1 !== place.name ? place.admin1 : undefined, place.country]
     .filter(Boolean)

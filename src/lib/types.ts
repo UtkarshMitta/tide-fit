@@ -78,17 +78,17 @@ export interface LocalGrounding {
 /**
  * The point a trip is organised around: where the training actually happens.
  *
- * For swimmers that is the nearest modelled open water, which can be tens of
- * kilometres from the geocoded city centre — a Lisbon swim happens at
- * Carcavelos, not at Marquês de Pombal. Lodging is searched and measured from
- * here rather than from the centroid. Land sports have no comparable fixed
- * coordinate, so the anchor falls back to the centre and says so.
+ * Lodging is searched and measured from here, not the city centroid. A
+ * `training-spot` is a real session location (named beach, trailhead, or the
+ * nearest modelled open water). `centre` is the honest fallback when no fixed
+ * spot can be resolved — inland swimming with no open water, or land sports
+ * whose routes start from wherever you sleep.
  */
 export interface TrainingAnchor {
   latitude: number;
   longitude: number;
-  kind: "swim-spot" | "centre";
-  /** Short phrase for column labels: "the swim spot", "Lisbon centre". */
+  kind: "training-spot" | "centre";
+  /** Short phrase for column labels: "Praia de Carcavelos", "Lisbon centre". */
   label: string;
   /** Full explanation of why distances are measured from here. */
   note: string;

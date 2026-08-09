@@ -82,7 +82,7 @@ export function LodgingList({
         <p
           className={cn(
             "border-b border-white/10 px-5 py-3 text-xs leading-relaxed",
-            anchor.kind === "swim-spot"
+            anchor.kind === "training-spot"
               ? "bg-tide-500/[0.07] text-tide-100"
               : "bg-white/[0.02] text-slate-400",
           )}

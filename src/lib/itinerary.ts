@@ -27,11 +27,12 @@ Rules you must follow:
 4. Reference the actual numbers you were given (wave height, AQI, gusts, feels-like temperature) rather than vague claims about the weather.
 5. If training load is provided, respect it: insert genuine recovery after a heavy block, and do not stack hard days.
 6. Name the place, never the source. Do not mention websites, publications, forums, subreddits, blogs or "according to" attributions — the traveller wants the beach, not the page it was found on.
-7. Every day needs concrete travel logistics in the "travel" field: the mode of transport (walk, metro, suburban train, bus, tram, ferry, bike, taxi or car), a realistic door-to-door duration, and what time to leave to make the session. Name specific lines, stations or stops ONLY when they appear in the LOCAL TRANSPORT results; otherwise say "a local train" or "a 15 minute taxi" rather than inventing a line. If the session is walkable, say so and give the walking time. Mention the return leg when it is awkward (last service, one-way wind, a climb home).
-8. Write for an athlete: concrete, warm, and practical. No hype, no emoji, no markdown formatting.
+7. Every day needs concrete travel logistics in the "travel" field: the mode of transport (walk, metro, suburban train, bus, tram, ferry, bike, taxi or car), a realistic door-to-door duration, and what time to leave to make the session. Name specific lines, stations, stops, bike-hire schemes or ticket types ONLY when they appear in the LOCAL TRANSPORT results; otherwise say "a local train" or "a 15 minute taxi" rather than inventing a line. If the session is walkable, say so and give the walking time. Always cover the return leg when it is awkward (last service, one-way wind, a climb home, bikes on peak trains).
+8. Weave how you move between parts of the day into midday and evening when the next stop is not a short walk — e.g. "train back into town, then…" or "taxi across to…". Do not leave the traveller stranded at the morning session with no way home.
+9. Write for an athlete: concrete, warm, and practical. No hype, no emoji, no markdown formatting.
 
 Return JSON only, matching this shape exactly:
-{"days":[{"date":"YYYY-MM-DD","title":"short evocative day title","morning":"2-3 sentences: the training session, where, and the safety-driven adjustment","travel":"1-2 sentences: mode of transport, door-to-door duration, and when to leave","midday":"2-3 sentences: recovery plus a real local experience from the search results","evening":"1-2 sentences: food, recovery, and what to prep for tomorrow","safetyNote":"one sentence citing the limiting measurement","citedPlaces":["names of real places you used from the search results"]}]}`;
+{"days":[{"date":"YYYY-MM-DD","title":"short evocative day title","morning":"2-3 sentences: the training session, where, and the safety-driven adjustment","travel":"2-3 sentences: mode of transport, door-to-door duration, when to leave, and how to get back","midday":"2-3 sentences: recovery plus a real local experience from the search results, including how you get there if it is not walkable","evening":"1-2 sentences: food, recovery, and what to prep for tomorrow","safetyNote":"one sentence citing the limiting measurement","citedPlaces":["names of real places you used from the search results"]}]}`;
 
 const DayPlanSchema = z.object({
   date: z.string(),
@@ -68,9 +69,9 @@ export function buildUserPrompt(request: ItineraryRequest): string {
   return [
     `Destination: ${destinationLabel}`,
     `Sports in focus: ${sports.map((sport) => SPORT_LABELS[sport]).join(", ")}`,
-    anchor.kind === "swim-spot"
-      ? `Where the swim happens: open water roughly ${anchor.distanceFromCentreKm} km from ${destinationLabel} centre, so the day involves getting out there and back.`
-      : `No single fixed training location — sessions start from wherever the traveller is staying in ${destinationLabel}.`,
+    anchor.kind === "training-spot"
+      ? `Primary training spot: ${anchor.label} (about ${anchor.distanceFromCentreKm} km from ${destinationLabel} centre). Lodging is booked near this spot, so morning travel is usually a short walk, bike, or local hop from the stay — not a commute from the city centre. Still explain how to reach the spot from a typical stay nearby, and how to get into town for midday/evening when needed.`
+      : `No single fixed training location could be pinned — sessions start from wherever the traveller is staying in ${destinationLabel}. Still give a travel field covering local mode of transport for the day.`,
     `Trip dates: ${conditions[0]?.date} to ${conditions[conditions.length - 1]?.date} (${conditions.length} days)`,
     trainingLoad && trainingLoad.source === "strava"
       ? `Recent training load (last 7 days, from Strava): ${trainingLoad.summary}`
@@ -109,10 +110,13 @@ export async function generateItinerary(request: ItineraryRequest): Promise<Itin
     const byDate = new Map(parsed.days.map((day) => [day.date, day]));
 
     // Trust our own date sequence over the model's, and backfill any day it skipped.
+    // Empty travel is filled from the deterministic fallback so the card never
+    // ships without a mode of transport.
     const plans = request.conditions.map((day, index) => {
       const generated = byDate.get(day.date) ?? parsed.days[index];
       if (!generated) return buildFallbackPlan(request, day);
-      return { ...generated, date: day.date } satisfies DayPlan;
+      const travel = generated.travel?.trim() || fallbackTravel(request, day);
+      return { ...generated, date: day.date, travel } satisfies DayPlan;
     });
 
     return { plans, source: "llm" };
@@ -153,26 +157,51 @@ const SESSION_BY_SPORT: Record<Sport, { safe: string; caution: string; unsafe: s
 };
 
 /**
- * Travel advice without an LLM. It can only use what we measured — the distance
- * to the training anchor — so it gives a mode and a duration and stops there
- * rather than naming a line it cannot verify.
+ * Travel advice without an LLM. Prefers a concrete line or service from the
+ * transport grounding when one is available; otherwise falls back to mode +
+ * duration from the measured distance to the training anchor, and never invents
+ * a station name.
  */
 function fallbackTravel(request: ItineraryRequest, day: DayConditions): string {
-  const { anchor, place } = request;
+  const { anchor, place, grounding } = request;
+  const tip = transportTip(grounding);
 
-  if (anchor.kind !== "swim-spot") {
-    return `Everything today starts from where you are staying in ${place.name} — no transport needed beyond a warm-up walk or spin to the start.`;
+  if (anchor.kind !== "training-spot") {
+    return tip
+      ? `Everything today starts from where you are staying in ${place.name}. ${tip}`
+      : `Everything today starts from where you are staying in ${place.name} — no transport needed beyond a warm-up walk or spin to the start. Local metro, bus or bike hire covers anything further afield.`;
   }
 
   const swimIsOff = day.bySport.some(
     (sport) => sport.sport === "swimming" && (sport.risk === "unsafe" || sport.risk === "unknown"),
   );
   if (swimIsOff) {
-    return `No trip out to the coast today — the water is off, so stay local in ${place.name} and keep the session on your doorstep.`;
+    return tip
+      ? `Skip ${anchor.label} today — the water is off. Stay near your lodging and keep the session easy. ${tip}`
+      : `Skip ${anchor.label} today — the water is off. Stay near your lodging and keep the session on your doorstep; use a local taxi or metro only if you head into ${place.name} later.`;
   }
 
-  const meters = anchor.distanceFromCentreKm * 1000;
-  return `The water is about ${anchor.distanceFromCentreKm} km from ${place.name} centre — roughly ${travelEstimate(meters).replace("~", "")} each way by road, or a local train if one runs the coast. Leave early enough to be swimming by mid-morning, and plan the return leg before you go.`;
+  // Lodging is searched around the training spot, so the morning hop is short.
+  // The longer city-centre distance is only useful for midday/evening trips in.
+  const intoTown =
+    anchor.distanceFromCentreKm >= 2
+      ? ` ${place.name} centre is about ${anchor.distanceFromCentreKm} km inland (${travelEstimate(anchor.distanceFromCentreKm * 1000).replace("~", "")}) if you want to go in after the session.`
+      : "";
+
+  if (tip) {
+    return `Stay near ${anchor.label} so the morning session is a short walk or easy local hop from your door. ${tip}${intoTown} Leave a buffer to be ready mid-morning.`;
+  }
+
+  return `Stay near ${anchor.label} so the morning session is a short walk or easy local hop from your door — bike, taxi or a short bus ride covers any gap.${intoTown} Leave a buffer to be ready mid-morning, and confirm how you will get back before you go.`;
+}
+
+/** Pulls one practical sentence from transport grounding without naming a source. */
+function transportTip(grounding: LocalGrounding): string | undefined {
+  const snippet = grounding.transport[0]?.content?.trim();
+  if (!snippet) return undefined;
+  const sentence = snippet.split(/(?<=[.!?])\s+/)[0]?.trim();
+  if (!sentence || sentence.length < 40 || sentence.length > 220) return undefined;
+  return sentence.endsWith(".") ? sentence : `${sentence}.`;
 }
 
 function buildFallbackPlan(request: ItineraryRequest, day: DayConditions): DayPlan {
