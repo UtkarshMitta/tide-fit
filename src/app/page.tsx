@@ -48,6 +48,10 @@ function IntegrationPill({ label, active }: { label: string; active: boolean }) 
 export default async function HomePage() {
   const user = await getCurrentUser();
   const savedTrips = await listTripsForCurrentUser();
+  // The footer pill tracked STRAVA_* env only, so on a deployment using the
+  // paste-your-own-credentials path it read "not configured" even while a
+  // visitor was connected — which reads as an unimplemented feature.
+  const stravaConnected = isStravaConnected();
 
   return (
     <main className="mx-auto w-full max-w-5xl px-5 py-10 sm:px-8 sm:py-16">
@@ -87,10 +91,7 @@ export default async function HomePage() {
       <section className="mt-10">
         <TripForm demoTripId={DEMO_TRIP_ID} />
         <div className="mt-4">
-          <StravaConnect
-            hostConfigured={integrationStatus.strava}
-            connected={isStravaConnected()}
-          />
+          <StravaConnect hostConfigured={integrationStatus.strava} connected={stravaConnected} />
         </div>
       </section>
 
@@ -143,7 +144,10 @@ export default async function HomePage() {
           <IntegrationPill label="Stay22 live prices" active={integrationStatus.stay22Api} />
           <IntegrationPill label="Supabase" active={integrationStatus.supabase} />
           <IntegrationPill label="Google Calendar" active={integrationStatus.googleCalendar} />
-          <IntegrationPill label="Strava (optional)" active={integrationStatus.strava} />
+          <IntegrationPill
+            label="Strava (optional)"
+            active={integrationStatus.strava || stravaConnected}
+          />
         </div>
         <p className="mt-4 max-w-2xl text-xs leading-relaxed text-slate-500">
           Condition thresholds are a planning aid, not a substitute for local lifeguards, park
