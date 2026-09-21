@@ -2,6 +2,9 @@
   "name": "tide-fit",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "demo:audio": "tsx --env-file-if-exists=.env.local scripts/prerender-demo-audio.ts",
     "check:conditions": "tsx --env-file-if-exists=.env.local scripts/check-conditions.ts",
-    "check:lodging": "tsx --env-file-if-exists=.env.local scripts/probe-lodging.ts"
+    "check:lodging": "tsx --env-file-if-exists=.env.local scripts/probe-lodging.ts",
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "^2.62.0",

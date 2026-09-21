@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { createOAuthState, safeReturnPath } from "@/lib/oauth-state";
 import { getStravaAuthUrl, persistStravaAppCredentials } from "@/lib/strava";
 import { serverEnv } from "@/lib/env";
 
@@ -18,10 +19,7 @@ export async function POST(request: Request) {
 
   const clientId = String(body.clientId ?? "").trim();
   const clientSecret = String(body.clientSecret ?? "").trim();
-  const returnTo =
-    body.returnTo && body.returnTo.startsWith("/") && !body.returnTo.startsWith("//")
-      ? body.returnTo
-      : "/";
+  const returnTo = safeReturnPath(body.returnTo);
 
   if (!/^\d{3,12}$/.test(clientId)) {
     return NextResponse.json(
@@ -40,7 +38,7 @@ export async function POST(request: Request) {
   // authorize with the shared app — avoids storing unused credentials.
   if (serverEnv.stravaClientId && serverEnv.stravaClientSecret) {
     return NextResponse.json({
-      authorizeUrl: getStravaAuthUrl(returnTo, {
+      authorizeUrl: getStravaAuthUrl(createOAuthState("strava", returnTo), {
         clientId: serverEnv.stravaClientId,
         clientSecret: serverEnv.stravaClientSecret,
         source: "env",
@@ -51,7 +49,7 @@ export async function POST(request: Request) {
   persistStravaAppCredentials(clientId, clientSecret);
 
   return NextResponse.json({
-    authorizeUrl: getStravaAuthUrl(returnTo, {
+    authorizeUrl: getStravaAuthUrl(createOAuthState("strava", returnTo), {
       clientId,
       clientSecret,
       source: "user",

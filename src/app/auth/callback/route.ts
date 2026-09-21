@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 
+import { safeReturnPath } from "@/lib/oauth-state";
 import { createServerSupabase } from "@/lib/supabase";
 
 /** Completes the Supabase magic-link flow and drops the user back on the home page. */
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/";
+  const next = safeReturnPath(searchParams.get("next"));
 
   if (code) {
     const supabase = createServerSupabase();
@@ -18,5 +19,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(`${origin}${next.startsWith("/") ? next : "/"}`);
+  return NextResponse.redirect(`${origin}${next}`);
 }

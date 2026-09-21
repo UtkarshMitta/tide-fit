@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { PlanningError, parseTripInput, planTrip } from "@/lib/planner";
+import { TRIP_RATE_LIMIT, checkRateLimit, clientKey, tooManyRequests } from "@/lib/rate-limit";
 import { saveTrip } from "@/lib/store";
 
 export const runtime = "nodejs";
@@ -8,6 +9,10 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
+  // Every trip build costs upstream API calls, so cap it before doing any work.
+  const limit = checkRateLimit(clientKey(request), TRIP_RATE_LIMIT);
+  if (!limit.ok) return tooManyRequests(limit.retryAfter);
+
   let input;
   try {
     input = parseTripInput(await request.json());

@@ -417,6 +417,27 @@ interface OpenWeatherAirResponse {
   list?: { dt: number; components?: { pm2_5?: number; pm10?: number } }[];
 }
 
+/**
+ * OpenWeatherMap returns Unix timestamps; the rest of the pipeline works in the
+ * destination's local dates. Bucketing by UTC would push the evening hours of
+ * a UTC+ destination (and the early hours of a UTC- one) onto the wrong day,
+ * so a peak AQI could be reported against a day it did not occur on.
+ */
+function localDateFor(unixSeconds: number, timeZone: string): string {
+  try {
+    // en-CA renders ISO-ordered YYYY-MM-DD.
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(unixSeconds * 1000));
+  } catch {
+    // "auto" and other non-IANA values are not valid time zones here.
+    return new Date(unixSeconds * 1000).toISOString().slice(0, 10);
+  }
+}
+
 async function fetchOpenWeatherAqi(
   place: GeocodedPlace,
   dates: Set<string>,
@@ -431,7 +452,7 @@ async function fetchOpenWeatherAqi(
 
   const peaks: Record<string, number> = {};
   for (const entry of data.list ?? []) {
-    const date = new Date(entry.dt * 1000).toISOString().slice(0, 10);
+    const date = localDateFor(entry.dt, place.timezone);
     if (!dates.has(date)) continue;
     const pm25 = entry.components?.pm2_5;
     const pm10 = entry.components?.pm10;
