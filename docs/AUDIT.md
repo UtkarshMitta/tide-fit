@@ -138,6 +138,11 @@ PR. `src/lib/safety.test.ts` adds 13 tests (`npm test`, `node:test` via the exis
 dependency — no new runtime dependency) covering fail-safe behaviour, threshold boundaries, the
 OAuth return path and the sanitiser.
 
+CI earned its place on the first run: it failed on Node 20, because `node --test` only accepts glob
+paths from Node 22 onward and the local machine was on Node 24. The workflow now pins Node 22 and
+`package.json` declares `engines: { node: ">=22" }` so the floor is explicit rather than
+accidental.
+
 ---
 
 ## Needs your decision
