@@ -11,7 +11,7 @@
     "demo:audio": "tsx --env-file-if-exists=.env.local scripts/prerender-demo-audio.ts",
     "check:conditions": "tsx --env-file-if-exists=.env.local scripts/check-conditions.ts",
     "check:lodging": "tsx --env-file-if-exists=.env.local scripts/probe-lodging.ts",
-    "test": "tsx --test src/"
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "^2.62.0",
