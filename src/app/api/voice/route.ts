@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { briefingScript } from "@/lib/itinerary";
+import { VOICE_RATE_LIMIT, checkRateLimit, clientKey, tooManyRequests } from "@/lib/rate-limit";
 import { getTrip } from "@/lib/store";
 import { AUDIO_CONTENT_TYPE, VoiceUnavailableError, synthesizeBriefing } from "@/lib/voice";
 
@@ -12,6 +13,10 @@ export const maxDuration = 60;
  * endpoint cannot be used as an open text-to-speech proxy.
  */
 export async function POST(request: Request) {
+  // ElevenLabs bills per character; the in-process cache only helps on repeats.
+  const limit = checkRateLimit(clientKey(request), VOICE_RATE_LIMIT);
+  if (!limit.ok) return tooManyRequests(limit.retryAfter);
+
   let tripId: string;
   let date: string;
 
