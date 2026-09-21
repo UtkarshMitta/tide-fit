@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 
 import { exchangeGoogleCode, persistGoogleToken } from "@/lib/calendar";
 import { serverEnv } from "@/lib/env";
-
-function safeReturnPath(state: string | null): string {
-  return state && state.startsWith("/") && !state.startsWith("//") ? state : "/";
-}
+import { consumeOAuthState } from "@/lib/oauth-state";
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const code = params.get("code");
-  const returnTo = safeReturnPath(params.get("state"));
+  const { valid, returnTo } = consumeOAuthState("google", params.get("state"));
+
+  if (!valid) {
+    return NextResponse.redirect(`${serverEnv.appUrl}${returnTo}?calendar=error`);
+  }
 
   if (!code) {
     return NextResponse.redirect(`${serverEnv.appUrl}${returnTo}?calendar=denied`);
