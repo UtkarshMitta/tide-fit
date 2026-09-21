@@ -9,6 +9,12 @@ export const serverEnv = {
   openAiApiKey: process.env.OPENAI_API_KEY,
   openAiModel: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
   openWeatherApiKey: process.env.OPENWEATHER_API_KEY,
+  /**
+   * Bypasses RLS, so it must never be exposed to the browser — no NEXT_PUBLIC_
+   * prefix, and only ever read from server modules. Optional: without it trip
+   * storage falls back to the anon key and the pre-002 schema.
+   */
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   stay22ApiKey: process.env.STAY22_API_KEY,
   googleClientId: process.env.GOOGLE_CLIENT_ID,
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -28,6 +34,7 @@ export const integrationStatus = {
   openWeather: Boolean(serverEnv.openWeatherApiKey),
   stay22Api: Boolean(serverEnv.stay22ApiKey),
   supabase: Boolean(publicEnv.supabaseUrl && publicEnv.supabaseAnonKey),
+  supabaseServiceRole: Boolean(publicEnv.supabaseUrl && process.env.SUPABASE_SERVICE_ROLE_KEY),
   googleCalendar: Boolean(serverEnv.googleClientId && serverEnv.googleClientSecret),
   strava: Boolean(serverEnv.stravaClientId && serverEnv.stravaClientSecret),
 };

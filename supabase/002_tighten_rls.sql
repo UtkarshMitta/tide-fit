@@ -29,17 +29,24 @@
 -- So trips can be owner-only at the RLS layer while shared links keep working,
 -- provided the server reads them with a key that is not the anon key.
 --
--- APPLYING THIS REQUIRES A CODE CHANGE TOO:
---   1. Add SUPABASE_SERVICE_ROLE_KEY to the server env (never NEXT_PUBLIC_).
---   2. Give src/lib/store.ts a service-role client for trip reads and writes,
---      keeping the anon/SSR client for auth so auth.uid() still resolves.
--- Run this migration only together with that change, or anonymous trips stop
--- being readable at all.
+-- THE CODE HALF IS ALREADY IN PLACE. src/lib/supabase.ts exposes
+-- createServiceSupabase(), and src/lib/store.ts routes every trip read/write
+-- through it while keeping the cookie-bound anon client for auth, so
+-- auth.uid() still resolves. Both degrade to the old anon-key path when
+-- SUPABASE_SERVICE_ROLE_KEY is unset.
 --
--- TRADE-OFF: after this, a trip created while signed out is readable only by
--- the server that holds the service key. That is the intended behaviour, but
--- it does mean anonymous trips are no longer world-readable by link if the
--- code change is skipped.
+-- TO APPLY:
+--   1. Set SUPABASE_SERVICE_ROLE_KEY in the server env (never NEXT_PUBLIC_).
+--   2. Run this file in the Supabase SQL editor.
+-- Doing step 2 without step 1 leaves the app unable to read any trip, since
+-- the anon key will no longer satisfy the new SELECT policy.
+--
+-- AFTER THIS, authorization for trips lives in the application rather than in
+-- RLS: getTrip is a capability lookup on an unguessable server-minted
+-- randomUUID (so shared links keep working, including for anonymous trips),
+-- and listTripsForCurrentUser filters on the id resolved from the caller's own
+-- session. Those explicit filters are load-bearing — the service role bypasses
+-- RLS, so a missing .eq("user_id", ...) would leak other users' rows.
 
 begin;
 

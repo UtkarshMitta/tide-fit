@@ -34,6 +34,7 @@ Open [http://localhost:3000](http://localhost:3000). With no keys configured you
 ### Optional setup
 
 - **Supabase** — run `supabase/schema.sql` in the SQL editor, then set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Without it, trips live in the server's memory for the session.
+  For anything public, also apply `supabase/002_tighten_rls.sql` and set `SUPABASE_SERVICE_ROLE_KEY`. The original policy set makes every saved trip readable to anyone holding the anon key — which ships to the browser — so the whole table is world-readable without it. See `docs/AUDIT.md`.
 - **Google Calendar** — create an OAuth client with redirect URI `{APP_URL}/api/calendar/callback` and the `calendar.events` scope.
 - **Strava (optional)** — skip entirely, or connect with your own free Strava API application. On the landing page, open Connect Strava, paste Client ID + Client Secret from [strava.com/settings/api](https://www.strava.com/settings/api) (callback domain = your host; TideFit uses `{APP_URL}/api/strava/callback`), then authorize. The host can also set `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` so visitors skip the paste step. Without Strava, trips still plan; intensity just isn't auto-adjusted from recent training.
 

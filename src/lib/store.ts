@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { DEMO_TRIP_ID, buildDemoTrip } from "@/lib/demo";
-import { createServerSupabase } from "@/lib/supabase";
+import { createServerSupabase, createServiceSupabase } from "@/lib/supabase";
 import type { Trip } from "@/lib/types";
 
 /**
@@ -59,17 +59,39 @@ function rememberInMemory(trip: Trip): void {
   memory.set(trip.id, trip);
 }
 
+/**
+ * The client used for `trips` rows. Prefers the service role so RLS can stay
+ * owner-only (see supabase/002_tighten_rls.sql); falls back to the cookie-bound
+ * anon client, which is what the pre-002 schema needs.
+ *
+ * Because the service role bypasses RLS, every caller below must scope its own
+ * query — there is no policy left to catch a missing filter.
+ */
+function tripsClient() {
+  return createServiceSupabase() ?? createServerSupabase();
+}
+
+/** Identity always comes from the user's session, never the service client. */
+async function currentUserId(): Promise<string | null> {
+  const supabase = createServerSupabase();
+  if (!supabase) return null;
+  const { data } = await supabase.auth.getUser();
+  return data.user?.id ?? null;
+}
+
 export async function saveTrip(trip: Trip): Promise<Trip> {
   rememberInMemory(trip);
   await writeToDisk(trip);
 
-  const supabase = createServerSupabase();
+  const supabase = tripsClient();
   if (!supabase) return trip;
 
-  const { data: userData } = await supabase.auth.getUser();
+  const userId = await currentUserId();
+  // `trip.id` is a server-minted randomUUID (planner.ts) and is never taken
+  // from the request body, so this upsert cannot be aimed at another row.
   const { error } = await supabase.from("trips").upsert({
     id: trip.id,
-    user_id: userData.user?.id ?? null,
+    user_id: userId,
     destination: trip.input.destination,
     start_date: trip.input.startDate,
     days: trip.input.days,
@@ -95,7 +117,9 @@ export async function getTrip(id: string): Promise<Trip | null> {
     return onDisk;
   }
 
-  const supabase = createServerSupabase();
+  // A trip id is an unguessable capability: holding the link is what grants
+  // access, which is the shared-itinerary behaviour the product intends.
+  const supabase = tripsClient();
   if (!supabase) return null;
 
   const { data, error } = await supabase.from("trips").select("payload").eq("id", id).maybeSingle();
@@ -120,16 +144,18 @@ export interface TripSummary {
 }
 
 export async function listTripsForCurrentUser(): Promise<TripSummary[]> {
-  const supabase = createServerSupabase();
-  if (!supabase) return [];
+  const userId = await currentUserId();
+  if (!userId) return [];
 
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) return [];
+  const supabase = tripsClient();
+  if (!supabase) return [];
 
   const { data, error } = await supabase
     .from("trips")
     .select("id, destination, start_date, days, sports, created_at")
-    .eq("user_id", userData.user.id)
+    // Load-bearing: the service client bypasses RLS, so this filter is the
+    // only thing keeping one user's list out of another's.
+    .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(20);
 
