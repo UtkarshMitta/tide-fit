@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "demo:audio": "tsx --env-file-if-exists=.env.local scripts/prerender-demo-audio.ts",
     "check:conditions": "tsx --env-file-if-exists=.env.local scripts/check-conditions.ts",
+    "check:rls": "tsx --env-file-if-exists=.env.local scripts/check-rls.ts",
     "check:lodging": "tsx --env-file-if-exists=.env.local scripts/probe-lodging.ts",
     "test": "tsx --test \"src/**/*.test.ts\""
   },

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createOAuthState, safeReturnPath } from "@/lib/oauth-state";
+import { sealingAvailable } from "@/lib/seal";
 import { getStravaAuthUrl, persistStravaAppCredentials } from "@/lib/strava";
 import { serverEnv } from "@/lib/env";
 
@@ -44,6 +45,20 @@ export async function POST(request: Request) {
         source: "env",
       }),
     });
+  }
+
+  // Fail closed. Without a sealing key the secret could only be stored in
+  // plaintext in the visitor's cookie, so refuse rather than do that quietly.
+  if (!sealingAvailable()) {
+    return NextResponse.json(
+      {
+        error:
+          "This deployment cannot accept pasted Strava credentials. Ask the host to set " +
+          "TIDEFIT_SECRET_KEY (so the secret can be encrypted) or to configure " +
+          "STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET.",
+      },
+      { status: 503 },
+    );
   }
 
   persistStravaAppCredentials(clientId, clientSecret);
