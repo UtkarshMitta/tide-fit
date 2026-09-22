@@ -143,6 +143,11 @@ export function StravaConnect({
             &quot;API key&quot; — these two values are what TideFit needs.
           </p>
 
+          <p className="text-xs leading-relaxed text-slate-500">
+            Your Client Secret is encrypted on the server and stored in a cookie in this browser
+            for 7 days. It is never sent anywhere except Strava. Disconnect to erase it.
+          </p>
+
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-xs text-slate-400">
               Client ID

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { classifyDay, classifyMetric } from "@/lib/conditions";
 import { safeReturnPath } from "@/lib/oauth-state";
 import { sanitiseForPrompt } from "@/lib/search";
+import { SealingUnavailableError, seal, sealingAvailable, unseal } from "@/lib/seal";
 import { isPropertyPage, cleanPropertyName } from "@/lib/lodging";
 import { summariseTrainingLoad } from "@/lib/strava";
 import { SPORT_THRESHOLDS } from "@/lib/thresholds";
@@ -257,4 +258,69 @@ test("cleanPropertyName strips sales copy around the property name", () => {
   assert.equal(cleanPropertyName("Best Price on Hotel Praia Mar in Carcavelos + Reviews!"), "Hotel Praia Mar");
   assert.equal(cleanPropertyName("Riviera Hotel - Prices and Reviews"), "Riviera Hotel");
   assert.equal(cleanPropertyName("Vila Gale Estoril | Official Site"), "Vila Gale Estoril");
+});
+
+// ---------------------------------------------------------------------------
+// Sealed cookie values
+//
+// The Strava app secret round-trips through a browser cookie, so the sealing
+// has to survive that and fail closed on tampering.
+// ---------------------------------------------------------------------------
+
+test("a sealed value round-trips", () => {
+  process.env.TIDEFIT_SECRET_KEY = "test-key-not-a-real-secret";
+  const secret = "0123456789abcdef0123456789abcdef";
+  const sealed = seal(secret);
+  assert.notEqual(sealed, secret);
+  assert.ok(!sealed.includes(secret), "the plaintext must not survive in the sealed value");
+  assert.equal(unseal(sealed), secret);
+});
+
+test("sealing the same value twice gives different ciphertext", () => {
+  process.env.TIDEFIT_SECRET_KEY = "test-key-not-a-real-secret";
+  // A fresh IV each time, so a cookie cannot be matched against a known value.
+  assert.notEqual(seal("same-input"), seal("same-input"));
+});
+
+test("a tampered sealed value does not open", () => {
+  process.env.TIDEFIT_SECRET_KEY = "test-key-not-a-real-secret";
+  const sealed = seal("secret-value");
+  const parts = sealed.split(".");
+  // Flip a byte in the ciphertext; GCM's tag must reject it.
+  const data = Buffer.from(parts[3]!, "base64url");
+  data[0] = data[0]! ^ 0xff;
+  parts[3] = data.toString("base64url");
+  assert.equal(unseal(parts.join(".")), null);
+});
+
+test("unseal rejects junk and legacy plaintext rather than throwing", () => {
+  process.env.TIDEFIT_SECRET_KEY = "test-key-not-a-real-secret";
+  assert.equal(unseal(undefined), null);
+  assert.equal(unseal(""), null);
+  assert.equal(unseal("not-sealed-at-all"), null);
+  // A plaintext secret written before sealing existed must read as absent.
+  assert.equal(unseal("0123456789abcdef0123456789abcdef"), null);
+  assert.equal(unseal("v9.a.b.c"), null);
+});
+
+test("sealing reports unavailable and refuses without a key", () => {
+  delete process.env.TIDEFIT_SECRET_KEY;
+  assert.equal(sealingAvailable(), false);
+  assert.equal(unseal("v1.a.b.c"), null);
+  assert.throws(() => seal("x"), SealingUnavailableError);
+});
+
+test("rotating the sealing key invalidates values sealed under the old one", () => {
+  process.env.TIDEFIT_SECRET_KEY = "first-key";
+  const sealed = seal("secret-value");
+  assert.equal(unseal(sealed), "secret-value");
+
+  process.env.TIDEFIT_SECRET_KEY = "second-key";
+  assert.equal(unseal(sealed), null, "old ciphertext must not open under a new key");
+
+  // And the new key must work for new values.
+  assert.equal(unseal(seal("fresh-value")), "fresh-value");
+
+  process.env.TIDEFIT_SECRET_KEY = "first-key";
+  assert.equal(unseal(sealed), "secret-value", "rotating back must restore the old values");
 });

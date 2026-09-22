@@ -43,3 +43,27 @@ export function requireEnv(value: string | undefined, name: string): string {
   if (!value) throw new Error(`Missing ${name}. Add it to .env.local — see .env.example.`);
   return value;
 }
+
+/**
+ * Warns once, at server start, when Supabase is configured but trip storage is
+ * still on the anon key.
+ *
+ * The original supabase/schema.sql grants `select using (true)` on the trips
+ * table. Since the anon key ships to the browser, that leaves every saved trip
+ * publicly readable. The fix is supabase/002_tighten_rls.sql plus this key, and
+ * both are easy to forget — a misconfigured deployment looks and behaves
+ * completely normally, which is exactly why it needs to be noisy here.
+ */
+if (
+  typeof window === "undefined" &&
+  integrationStatus.supabase &&
+  !integrationStatus.supabaseServiceRole
+) {
+  console.warn(
+    "[tidefit] Supabase is configured without SUPABASE_SERVICE_ROLE_KEY.\n" +
+      "          Trip storage is using the anon key, which means the trips table is\n" +
+      "          only as private as its RLS policies. If you have not applied\n" +
+      "          supabase/002_tighten_rls.sql, every saved trip is publicly readable.\n" +
+      "          Verify with: npm run check:rls",
+  );
+}

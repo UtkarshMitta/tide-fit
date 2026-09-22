@@ -143,6 +143,7 @@ Condition data from Open-Meteo (geocoding, marine, forecast, air quality) needs 
 | `OPENWEATHER_API_KEY` | Air quality via OpenWeatherMap instead of Open-Meteo | Open-Meteo `us_aqi` |
 | `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Sign-in and saved trips | Trips kept in server memory and a temp-dir cache |
 | `SUPABASE_SERVICE_ROLE_KEY` | Owner-only row-level security — **see [Deploying](#deploying)** | Trip storage uses the anon key and the original schema |
+| `TIDEFIT_SECRET_KEY` | Encrypts visitor-pasted Strava secrets before they touch a cookie | The paste-your-own-credentials path is refused |
 | `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` | Google Calendar sync | Sync button disabled |
 | `STRAVA_CLIENT_ID` + `STRAVA_CLIENT_SECRET` | Training-load-aware intensity for every visitor | Each visitor can supply their own app credentials instead |
 | `NEXT_PUBLIC_APP_URL` | Base URL used to build OAuth redirect URIs | Falls back to `VERCEL_URL` when deployed on Vercel, else `http://localhost:3000` |
@@ -154,12 +155,18 @@ Condition data from Open-Meteo (geocoding, marine, forecast, air quality) needs 
   values. For anything public, also read [Deploying](#deploying) before you expose it.
 - **Google Calendar** — create an OAuth client with redirect URI `{APP_URL}/api/calendar/callback`
   and the `calendar.events` scope.
-- **Strava** — either set `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` so every visitor can connect
-  with one shared app, or skip it and let each visitor paste their own Client ID and Secret from
-  [strava.com/settings/api](https://www.strava.com/settings/api) (Authorization Callback Domain =
-  your host; TideFit uses `{APP_URL}/api/strava/callback`). Note that visitor-pasted credentials are
-  stored in that visitor's browser cookie for 30 days — see [Security](#security). Without Strava,
-  trips still plan; intensity just isn't auto-adjusted from recent training.
+- **Strava** — two ways to enable it:
+  - **Host-configured (recommended):** set `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` and every
+    visitor connects through one shared app. Nothing sensitive reaches the browser.
+  - **Visitor-supplied:** leave those blank and set `TIDEFIT_SECRET_KEY` instead. Each visitor
+    pastes their own Client ID and Secret from
+    [strava.com/settings/api](https://www.strava.com/settings/api) (Authorization Callback Domain =
+    your host; TideFit uses `{APP_URL}/api/strava/callback`). The secret is encrypted with
+    AES-256-GCM before it goes into a 7-day cookie, so the cookie holds ciphertext that is useless
+    without your server key. Without `TIDEFIT_SECRET_KEY` this path is refused rather than storing
+    a third-party secret in plaintext.
+
+  Without Strava, trips still plan; intensity just isn't auto-adjusted from recent training.
 
 ---
 
@@ -171,6 +178,7 @@ npm test             # unit tests (node:test via tsx)
 npm run typecheck    # tsc --noEmit
 npm run lint         # next lint
 npm run build        # production build; works with zero keys
+npm run check:rls    # probes your Supabase project the way an attacker would
 ```
 
 CI runs typecheck, lint, test and a zero-key build on every push and pull request
@@ -235,6 +243,8 @@ and a shared link can 404 on a different serverless instance.
 1. Set `SUPABASE_SERVICE_ROLE_KEY` in the server environment — never with a `NEXT_PUBLIC_` prefix.
 2. Run [`supabase/002_tighten_rls.sql`](supabase/002_tighten_rls.sql) in the Supabase SQL editor.
 
+Verify it worked with `npm run check:rls`, which probes the table using only the public anon key.
+
 The original `supabase/schema.sql` grants `select using (true)` on the trips table. Because the
 anon key ships to the browser by design, that makes **every saved trip readable by anyone** who
 takes that key from your page source — destinations, dates and full itineraries for every user. The
@@ -255,10 +265,17 @@ The repository has been audited; findings, severities and what was fixed are in
 - **Trips are protected by an unguessable URL, not by an access check.** Anyone holding a trip link
   can read that trip. That is intended — it is what makes a shared itinerary work — but it means a
   trip id is a secret.
-- **Visitor-pasted Strava credentials live in a browser cookie** for 30 days (`httpOnly`,
-  `SameSite=lax`, and `Secure` whenever `NEXT_PUBLIC_APP_URL` is `https`). A Strava *application*
-  secret is a long-lived credential, so for a public deployment prefer setting
-  `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` on the server and leaving the paste path unused.
+- **Visitor-pasted Strava secrets are encrypted before they reach a cookie.** They are sealed with
+  AES-256-GCM under `TIDEFIT_SECRET_KEY` and stored for 7 days (`httpOnly`, `SameSite=lax`, and
+  `Secure` whenever `NEXT_PUBLIC_APP_URL` is `https`), so the cookie carries ciphertext rather than
+  a usable credential. Without that key the paste path is refused outright. Host-configured
+  `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` remains the simplest option for a public deployment,
+  since then no visitor secret exists at all.
+
+Before exposing a deployment, run `npm run check:rls`. It takes your public anon key and asks
+PostgREST for the trips table, exactly as an attacker would, and tells you whether the hardened RLS
+policies are actually in force. A network failure is reported as inconclusive rather than as a
+pass — it never hands back a false all-clear.
 
 Next.js 14 is out of active support and `npm audit` reports advisories against it. The two
 critical-rated ones are not reachable in this app's configuration — it uses no `next/image` and no

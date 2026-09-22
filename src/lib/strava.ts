@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 
 import { serverEnv } from "@/lib/env";
 import { buildUrl, fetchJson, softFetch } from "@/lib/http";
+import { seal, unseal } from "@/lib/seal";
 import type { TrainingLoad } from "@/lib/types";
 import { round } from "@/lib/utils";
 
@@ -20,7 +21,7 @@ const STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
 const ACCESS_COOKIE = "tidefit_strava_access";
 const REFRESH_COOKIE = "tidefit_strava_refresh";
 const EXPIRY_COOKIE = "tidefit_strava_expiry";
-/** Visitor-supplied API application credentials (when server env is empty). */
+/** Visitor-supplied API application credentials, sealed (when server env is empty). */
 const CLIENT_ID_COOKIE = "tidefit_strava_client_id";
 const CLIENT_SECRET_COOKIE = "tidefit_strava_client_secret";
 
@@ -52,7 +53,9 @@ export function getStravaCredentials(): StravaAppCredentials | null {
 
   const cookieStore = cookies();
   const clientId = cookieStore.get(CLIENT_ID_COOKIE)?.value?.trim();
-  const clientSecret = cookieStore.get(CLIENT_SECRET_COOKIE)?.value?.trim();
+  // A cookie that does not open — wrong key, tampered, or written before
+  // sealing was enabled — reads as "not connected" rather than an error.
+  const clientSecret = unseal(cookieStore.get(CLIENT_SECRET_COOKIE)?.value);
   if (clientId && clientSecret) {
     return { clientId, clientSecret, source: "user" };
   }
@@ -60,12 +63,20 @@ export function getStravaCredentials(): StravaAppCredentials | null {
   return null;
 }
 
+/**
+ * Stores visitor-pasted app credentials. The secret is sealed with
+ * TIDEFIT_SECRET_KEY so the cookie holds ciphertext rather than a usable
+ * credential; `seal` throws when that key is absent, and the route refuses the
+ * paste path in that case rather than silently downgrading to plaintext.
+ *
+ * Seven days rather than thirty: long enough to not be annoying, short enough
+ * that an abandoned session stops carrying a third-party secret for a month.
+ */
 export function persistStravaAppCredentials(clientId: string, clientSecret: string): void {
   const cookieStore = cookies();
-  // 30 days — long enough for a hackathon weekend without re-pasting.
-  const options = cookieOptions(60 * 60 * 24 * 30);
+  const options = cookieOptions(60 * 60 * 24 * 7);
   cookieStore.set(CLIENT_ID_COOKIE, clientId.trim(), options);
-  cookieStore.set(CLIENT_SECRET_COOKIE, clientSecret.trim(), options);
+  cookieStore.set(CLIENT_SECRET_COOKIE, seal(clientSecret.trim()), options);
 }
 
 export function getStravaAuthUrl(state: string, credentials: StravaAppCredentials): string {

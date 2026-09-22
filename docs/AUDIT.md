@@ -19,8 +19,8 @@ Several plausible-looking issues turned out to be defused by design; those are r
 | # | Finding | Severity | Status |
 |---|---|---|---|
 | 1 | OAuth callbacks accept any code — no CSRF binding | High | **Fixed** |
-| 2 | Supabase RLS exposes every trip to anyone with the anon key | High | Code **landed**; migration still to run |
-| 3 | Strava application client secret stored in a browser cookie | High | Reported — product decision |
+| 2 | Supabase RLS exposes every trip to anyone with the anon key | High | Code **landed** + verifier; migration still to run |
+| 3 | Strava application client secret stored in a browser cookie | High | **Fixed** — sealed with AES-256-GCM |
 | 4 | No rate limiting on the endpoints that spend money | High | **Fixed** |
 | 5 | Poisoned search results reach the itinerary prompt unfiltered | Medium | **Fixed** (defence in depth) |
 | 6 | OpenWeather AQI bucketed by UTC, not destination-local date | Medium | **Fixed** |
@@ -183,6 +183,14 @@ To finish it:
 
 Step 2 without step 1 leaves the app unable to read any trip.
 
+**Verification tooling.** `npm run check:rls` takes the public anon key and asks PostgREST for the
+trips table, exactly as an attacker would, reporting whether anonymous SELECT and INSERT are
+refused and whether the service-role key is present. It distinguishes a policy refusal from an
+unreachable host: a transport failure is reported as inconclusive with a non-zero exit, never as a
+pass, since a false all-clear on a security check is worse than no check. `src/lib/env.ts` also
+warns at server start when Supabase is configured without the service-role key, because a
+misconfigured deployment otherwise looks and behaves entirely normally.
+
 **What this moves, not removes.** Authorization for trips shifts from RLS into the application:
 `getTrip` becomes a capability lookup on an unguessable server-minted `randomUUID`, and
 `listTripsForCurrentUser` filters on the id resolved from the caller's own session. Those explicit
@@ -214,8 +222,23 @@ This is a product decision rather than a pure bug, so I have not changed it. Thr
 3. **Keep it, state it.** Leave the mechanism and tell the visitor plainly in the UI that their app
    secret will be stored in their browser for 30 days.
 
-My recommendation is (1) for anything deployed publicly and (3) for a hackathon demo. Note the
-cookie cannot simply be path-scoped to `/api/strava`: `getTrainingLoad()` needs it during
+**Resolved via option 2.** `src/lib/seal.ts` encrypts the pasted secret with AES-256-GCM under a
+new `TIDEFIT_SECRET_KEY` before it goes into the cookie, so the cookie carries ciphertext that is
+useless without the server key. GCM means a tampered cookie fails to open rather than decrypting to
+garbage, and a value sealed under a rotated key reads as absent rather than silently misbehaving.
+The cookie lifetime dropped from 30 days to 7, and the connect form now tells the visitor plainly
+what happens to their secret.
+
+It fails closed: without `TIDEFIT_SECRET_KEY` the paste route returns 503 rather than falling back
+to plaintext, pointing the host at either that key or host-configured credentials. Hosts using
+`STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` never reach the sealing path and do not need the key.
+
+Verified against a running server: with the key set the cookie contains `v1.<iv>.<tag>.<ciphertext>`
+and the plaintext appears nowhere in the response; without it the route 503s and sets no cookie.
+Option 1 (dropping the paste path) remains the simplest choice for a public deployment, since then
+no visitor secret exists at all — the README recommends it.
+
+Note the cookie cannot simply be path-scoped to `/api/strava`: `getTrainingLoad()` needs it during
 `POST /api/trips`.
 
 ### 7. Next.js 14.2.35 — Medium, but less alarming than `npm audit` suggests
