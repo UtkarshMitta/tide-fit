@@ -60,10 +60,6 @@ export function getStravaCredentials(): StravaAppCredentials | null {
   return null;
 }
 
-export function hasStravaCredentials(): boolean {
-  return getStravaCredentials() !== null;
-}
-
 export function persistStravaAppCredentials(clientId: string, clientSecret: string): void {
   const cookieStore = cookies();
   // 30 days — long enough for a hackathon weekend without re-pasting.

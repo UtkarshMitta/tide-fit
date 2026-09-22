@@ -4,8 +4,12 @@ import { test } from "node:test";
 import { classifyDay, classifyMetric } from "@/lib/conditions";
 import { safeReturnPath } from "@/lib/oauth-state";
 import { sanitiseForPrompt } from "@/lib/search";
+import { isPropertyPage, cleanPropertyName } from "@/lib/lodging";
+import { summariseTrainingLoad } from "@/lib/strava";
 import { SPORT_THRESHOLDS } from "@/lib/thresholds";
 import { worstRisk } from "@/lib/types";
+import { addDaysIso, toIsoDate } from "@/lib/utils";
+import { trimForNarration } from "@/lib/voice";
 
 /**
  * Regression cover for the parts of TideFit where being wrong is not a display
@@ -152,4 +156,105 @@ test("sanitiseForPrompt keeps ordinary venue text intact", () => {
 test("sanitiseForPrompt caps how much one result can contribute", () => {
   const cleaned = sanitiseForPrompt("a".repeat(5000));
   assert.ok(cleaned.length <= 601, `expected a capped string, got ${cleaned.length}`);
+});
+
+// ---------------------------------------------------------------------------
+// Strava training load
+//
+// These functions were exported but reachable only from their own module. They
+// are pure and cheap to pin, so they are covered here rather than un-exported.
+// ---------------------------------------------------------------------------
+
+test("training load totals distance, time and hard days", () => {
+  const load = summariseTrainingLoad([
+    // 20 km in 1 h — not hard by either rule.
+    { name: "AM run", type: "Run", distance: 20_000, moving_time: 3600, start_date_local: "2026-09-15T06:00:00Z" },
+    // 90 minutes clears the 5400 s long-session rule.
+    { name: "Long ride", type: "Ride", distance: 60_000, moving_time: 5400, start_date_local: "2026-09-16T06:00:00Z" },
+    // suffer_score clears the effort rule.
+    { name: "Intervals", type: "Run", distance: 10_000, moving_time: 2400, suffer_score: 120, start_date_local: "2026-09-17T06:00:00Z" },
+  ]);
+
+  assert.equal(load.source, "strava");
+  assert.equal(load.activityCount, 3);
+  assert.equal(load.weeklyDistanceKm, 90);
+  assert.equal(load.weeklyMovingHours, 3.2);
+  assert.equal(load.hardDays, 2);
+  assert.match(load.summary, /moderate week/);
+});
+
+test("hard days are counted per calendar day, not per activity", () => {
+  const twiceInOneDay = summariseTrainingLoad([
+    { name: "AM", type: "Run", distance: 10_000, moving_time: 5400, start_date_local: "2026-09-16T06:00:00Z" },
+    { name: "PM", type: "Run", distance: 10_000, moving_time: 5400, start_date_local: "2026-09-16T18:00:00Z" },
+  ]);
+  assert.equal(twiceInOneDay.hardDays, 1);
+});
+
+test("an empty week reads as light, not as missing data", () => {
+  const load = summariseTrainingLoad([]);
+  assert.equal(load.activityCount, 0);
+  assert.equal(load.hardDays, 0);
+  assert.match(load.summary, /light week/);
+});
+
+test("three hard days escalates the recovery advice", () => {
+  const heavy = summariseTrainingLoad(
+    ["2026-09-15", "2026-09-16", "2026-09-17"].map((day) => ({
+      name: "Session",
+      type: "Run",
+      distance: 15_000,
+      moving_time: 6000,
+      start_date_local: `${day}T06:00:00Z`,
+    })),
+  );
+  assert.equal(heavy.hardDays, 3);
+  assert.match(heavy.summary, /heavy block/);
+});
+
+// ---------------------------------------------------------------------------
+// Narration trimming and date helpers
+// ---------------------------------------------------------------------------
+
+test("narration trims at a sentence boundary when one is available", () => {
+  const text = `${"First sentence is long enough to matter. ".repeat(20)}Trailing clause`;
+  const trimmed = trimForNarration(text, 200);
+  assert.ok(trimmed.length <= 200);
+  assert.ok(trimmed.endsWith("."), `expected a sentence end, got: ${trimmed.slice(-40)}`);
+});
+
+test("narration falls back to an ellipsis when there is no late sentence break", () => {
+  const trimmed = trimForNarration(`${"word ".repeat(300)}`, 120);
+  assert.ok(trimmed.length <= 121);
+  assert.ok(trimmed.endsWith("…"));
+});
+
+test("narration leaves a short script untouched apart from whitespace", () => {
+  assert.equal(trimForNarration("  Good morning.\n\nWave height is low.  "), "Good morning. Wave height is low.");
+});
+
+test("toIsoDate formats in local time with zero padding", () => {
+  assert.equal(toIsoDate(new Date(2026, 0, 5)), "2026-01-05");
+  assert.equal(toIsoDate(new Date(2026, 11, 31)), "2026-12-31");
+});
+
+test("addDaysIso crosses month and year boundaries", () => {
+  assert.equal(addDaysIso("2026-01-31", 1), "2026-02-01");
+  assert.equal(addDaysIso("2026-12-31", 1), "2027-01-01");
+  assert.equal(addDaysIso("2026-03-01", -1), "2026-02-28");
+});
+
+// ---------------------------------------------------------------------------
+// Lodging result filtering
+// ---------------------------------------------------------------------------
+
+test("isPropertyPage accepts single properties and rejects listicles", () => {
+  assert.equal(isPropertyPage("https://www.booking.com/hotel/pt/riviera-carcavelos.html"), true);
+  assert.equal(isPropertyPage("https://www.booking.com/searchresults.html?city=lisbon"), false);
+});
+
+test("cleanPropertyName strips sales copy around the property name", () => {
+  assert.equal(cleanPropertyName("Best Price on Hotel Praia Mar in Carcavelos + Reviews!"), "Hotel Praia Mar");
+  assert.equal(cleanPropertyName("Riviera Hotel - Prices and Reviews"), "Riviera Hotel");
+  assert.equal(cleanPropertyName("Vila Gale Estoril | Official Site"), "Vila Gale Estoril");
 });
