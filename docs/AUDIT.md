@@ -266,8 +266,26 @@ removes dots and slashes.)
 
 ### 12b. No LICENSE — Low
 
-The repo is public with no license file, which means no one may legally reuse it. If that is
-deliberate, fine; if it is an oversight, add one before the repo gets attention.
+**Resolved.** The repo was public with no license file, so nobody could legally reuse it. Now
+0BSD — public-domain-equivalent, no attribution required, no conditions. Note that copyright in the
+original code sits with its author (Utkarsh Mittal), so the grant should be confirmed with them.
+
+### 13. Dead code — Low
+
+A full unused-export sweep found remarkably little. Exactly one genuinely dead symbol,
+`hasStravaCredentials` in `src/lib/strava.ts` (zero references anywhere), now removed. Two unused
+dependencies, `date-fns` and `lucide-react`, now uninstalled.
+
+Thirty-three further symbols are exported but referenced only inside their own module. Most are
+correct as-is: types that appear in an exported function's signature must be exported for callers to
+name them. The rest are pure helpers that are natural test targets, so they are now covered by
+tests rather than un-exported — `summariseTrainingLoad`, `trimForNarration`, `toIsoDate`,
+`addDaysIso`, `isPropertyPage` and `cleanPropertyName`. The suite went from 13 tests to 24.
+
+Two things that looked like dead code but are not, checked and cleared: the pre-rendered demo audio
+is properly wired (`demo.ts:288` through the trip page and `DayCard` to a HEAD check in
+`AudioBriefing`, falling back to `/api/voice`), and `prerender-demo-audio.ts` does create
+`public/audio` with `mkdir(recursive)`. No TODO/FIXME markers and no orphaned files.
 
 ---
 
