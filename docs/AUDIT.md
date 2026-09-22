@@ -19,7 +19,7 @@ Several plausible-looking issues turned out to be defused by design; those are r
 | # | Finding | Severity | Status |
 |---|---|---|---|
 | 1 | OAuth callbacks accept any code — no CSRF binding | High | **Fixed** |
-| 2 | Supabase RLS exposes every trip to anyone with the anon key | High | Migration proposed — needs owner action |
+| 2 | Supabase RLS exposes every trip to anyone with the anon key | High | Code **landed**; migration still to run |
 | 3 | Strava application client secret stored in a browser cookie | High | Reported — product decision |
 | 4 | No rate limiting on the endpoints that spend money | High | **Fixed** |
 | 5 | Poisoned search results reach the itinerary prompt unfiltered | Medium | **Fixed** (defence in depth) |
@@ -165,12 +165,30 @@ Two further policies are looser than intended: `insert` lets an unauthenticated 
 arbitrary rows, and `update using (user_id is null or ...)` lets anyone rewrite **any** anonymous
 trip, including one another visitor is about to open.
 
-**Proposed:** `supabase/002_tighten_rls.sql`, written but deliberately **not applied**. Link sharing
-does not need public SELECT — nothing reads trips from the browser; `getTrip` and
-`listTripsForCurrentUser` are both server-side. The migration makes trips owner-only and requires a
-matching code change (a service-role client for trip reads in `store.ts`, `SUPABASE_SERVICE_ROLE_KEY`
-in server env). Both must land together or anonymous trips stop being readable. It touches the
-owner's Supabase project, so it is yours to run.
+**Status: the code half is done; the migration is still yours to run.**
+
+Link sharing never needed public SELECT — nothing reads trips from the browser; `getTrip` and
+`listTripsForCurrentUser` are both server-side. So trips can be owner-only at the RLS layer while
+shared links keep working, provided the server reads them with a key that is not the anon key.
+
+`src/lib/supabase.ts` now exposes `createServiceSupabase()`, and `src/lib/store.ts` routes every
+trip read and write through it, keeping the cookie-bound anon client for auth so `auth.uid()` still
+resolves. Both fall back to the old anon-key path when `SUPABASE_SERVICE_ROLE_KEY` is unset, so
+this change is inert until you opt in.
+
+To finish it:
+
+1. Set `SUPABASE_SERVICE_ROLE_KEY` in the server env (never `NEXT_PUBLIC_`).
+2. Run `supabase/002_tighten_rls.sql` in the Supabase SQL editor.
+
+Step 2 without step 1 leaves the app unable to read any trip.
+
+**What this moves, not removes.** Authorization for trips shifts from RLS into the application:
+`getTrip` becomes a capability lookup on an unguessable server-minted `randomUUID`, and
+`listTripsForCurrentUser` filters on the id resolved from the caller's own session. Those explicit
+filters are now load-bearing — the service role bypasses RLS, so a dropped `.eq("user_id", ...)`
+would leak other users' rows where previously a policy would have caught it. Both call sites carry
+a comment saying so.
 
 ### 3. Strava application client secret lives in a browser cookie — High
 
