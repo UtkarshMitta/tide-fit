@@ -24,7 +24,7 @@ Several plausible-looking issues turned out to be defused by design; those are r
 | 4 | No rate limiting on the endpoints that spend money | High | **Fixed** |
 | 5 | Poisoned search results reach the itinerary prompt unfiltered | Medium | **Fixed** (defence in depth) |
 | 6 | OpenWeather AQI bucketed by UTC, not destination-local date | Medium | **Fixed** |
-| 7 | Next.js 14.2.35 carries a critical-rated advisory set | Medium | Reported — reachability analysed |
+| 7 | Next.js 14.2.35 carries a critical-rated advisory set | Medium | **Fixed** — upgraded to Next 16 / React 19 |
 | 8 | `wave_period_max` used against a "smaller is worse" rule | Low | Reported |
 | 9 | Strava status pill can never light up on the paste-credentials path | Low | **Fixed** |
 | 10 | `/auth/callback` missed the `//` guard the other callbacks had | Low | **Fixed** |
@@ -241,7 +241,7 @@ no visitor secret exists at all — the README recommends it.
 Note the cookie cannot simply be path-scoped to `/api/strava`: `getTrainingLoad()` needs it during
 `POST /api/trips`.
 
-### 7. Next.js 14.2.35 — Medium, but less alarming than `npm audit` suggests
+### 7. Next.js 14.2.35 — Medium; resolved by upgrading
 
 `npm audit` reports **6 vulnerabilities (1 critical, 5 high)**, and the only offered fix is
 `next@16`, a major upgrade. Checking reachability rather than taking the count at face value:
@@ -251,16 +251,41 @@ Note the cookie cannot simply be path-scoped to `/api/strava`: `getTrainingLoad(
 | RCE in Image Optimization API via AVIF (critical) | **No** — the app uses no `next/image` (`LodgingList.tsx:99` deliberately uses `<img>`), and `next.config.mjs` sets no `remotePatterns`, so remote images are blocked |
 | RCE on Windows-hosted servers (critical) | **No** — deployed on Linux/Vercel |
 | DoS / SSRF in Server Actions (high) | **No** — no `"use server"` anywhere in the codebase |
-| Middleware/proxy cache poisoning (low) | **Partially** — the app does use middleware |
+| Middleware/proxy cache poisoning (low) | **Partially** — the app does use middleware (now `proxy.ts`) |
 | postcss advisories (high) | **Build-time only** — not a runtime production risk |
 
 Also note CVE-2025-29927 (the middleware auth-bypass class) was fixed in 14.2.25; 14.2.35 is
-patched, and `src/middleware.ts` does no authorization anyway.
+patched, and `src/proxy.ts` (formerly `src/middleware.ts`) does no authorization anyway.
 
-**Recommendation:** no emergency. Next 14 is out of active support and there is no patch within
-14.2.x, so plan a deliberate 14 → 15 → 16 upgrade rather than running `npm audit fix --force`
-inside an audit branch. Sixteen other dependencies are behind; `@supabase/*`, `@tavily/core` and
-`lucide-react` are safe minor bumps today.
+**Resolved.** Upgraded to Next 16.3.5 and React 19.3.0. `npm audit` now reports **zero
+vulnerabilities**, down from 6 (1 critical, 5 high).
+
+The reachability analysis above is why this was done as a planned upgrade rather than an emergency
+`npm audit fix --force`: nothing critical was actually exploitable, so there was time to migrate
+properly instead of taking a forced major bump blind.
+
+What the upgrade required:
+
+- **Async request APIs.** `cookies()` is a promise in Next 15+, which cascaded through
+  `oauth-state.ts`, `calendar.ts`, `supabase.ts`, `strava.ts` and `store.ts` and every route that
+  calls them. The official codemod took the `UnsafeUnwrappedCookies` escape hatch, which preserves
+  behaviour but keeps the deprecated sync access; the functions were made properly async by hand
+  instead. `params` in `trip/[id]/page.tsx` likewise became a promise.
+- **`middleware` → `proxy`.** Next 16 deprecated the middleware file convention. Renamed via the
+  codemod to `src/proxy.ts`; it still only refreshes the Supabase session and still does no
+  authorization.
+- **ESLint 9 flat config.** `eslint-config-next@16` requires ESLint 9, and Next 16 removed
+  `next lint`. `.eslintrc.json` became `eslint.config.mjs` and the script now invokes `eslint`
+  directly.
+- **Five new lint findings on pre-existing code.** A `setState` inside an effect in
+  `StravaConnect.tsx` was a real anti-pattern and is now derived from `useSearchParams` instead. Two
+  `window.location.href` warnings were *not* mistakes — both navigate to route handlers that 302 to
+  Google and Strava, which `router.push` cannot follow — so they carry documented suppressions
+  rather than being "fixed" into something broken.
+
+Verified at runtime on Next 16: home page, demo trip, trip create-and-read round trip, OAuth nonce
+binding (forged callback still rejected), Strava secret still sealed, and rate limiting still
+cutting off at exactly 10. No deprecation or Suspense warnings in the dev log.
 
 ### 8. `wave_period_max` is used against a "smaller is worse" rule — Low
 

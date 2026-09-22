@@ -32,6 +32,9 @@ export function CalendarSyncButton({
       };
 
       if (payload.needsAuth) {
+        // A full-page navigation is required: this route handler 302s to
+        // accounts.google.com, which router.push cannot follow.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         window.location.href = `/api/calendar/authorize?returnTo=${encodeURIComponent(pathname)}`;
         return;
       }

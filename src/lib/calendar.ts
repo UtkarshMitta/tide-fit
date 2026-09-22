@@ -53,8 +53,8 @@ export async function exchangeGoogleCode(code: string): Promise<GoogleTokenRespo
   });
 }
 
-export function persistGoogleToken(token: GoogleTokenResponse): void {
-  const cookieStore = cookies();
+export async function persistGoogleToken(token: GoogleTokenResponse): Promise<void> {
+  const cookieStore = await cookies();
   const shared = {
     httpOnly: true,
     secure: serverEnv.appUrl.startsWith("https"),
@@ -66,8 +66,8 @@ export function persistGoogleToken(token: GoogleTokenResponse): void {
   cookieStore.set(EXPIRY_COOKIE, String(Date.now() + token.expires_in * 1000), shared);
 }
 
-export function getGoogleAccessToken(): string | null {
-  const cookieStore = cookies();
+export async function getGoogleAccessToken(): Promise<string | null> {
+  const cookieStore = await cookies();
   const access = cookieStore.get(ACCESS_COOKIE)?.value;
   const expiry = Number(cookieStore.get(EXPIRY_COOKIE)?.value ?? 0);
   if (!access || expiry < Date.now() + 30_000) return null;

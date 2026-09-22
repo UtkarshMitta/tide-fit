@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const next = safeReturnPath(searchParams.get("next"));
 
   if (code) {
-    const supabase = createServerSupabase();
+    const supabase = await createServerSupabase();
     const { error } = (await supabase?.auth.exchangeCodeForSession(code)) ?? {
       error: new Error("Supabase is not configured"),
     };

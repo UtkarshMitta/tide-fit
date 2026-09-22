@@ -67,13 +67,13 @@ function rememberInMemory(trip: Trip): void {
  * Because the service role bypasses RLS, every caller below must scope its own
  * query — there is no policy left to catch a missing filter.
  */
-function tripsClient() {
-  return createServiceSupabase() ?? createServerSupabase();
+async function tripsClient() {
+  return createServiceSupabase() ?? (await createServerSupabase());
 }
 
 /** Identity always comes from the user's session, never the service client. */
 async function currentUserId(): Promise<string | null> {
-  const supabase = createServerSupabase();
+  const supabase = await createServerSupabase();
   if (!supabase) return null;
   const { data } = await supabase.auth.getUser();
   return data.user?.id ?? null;
@@ -83,7 +83,7 @@ export async function saveTrip(trip: Trip): Promise<Trip> {
   rememberInMemory(trip);
   await writeToDisk(trip);
 
-  const supabase = tripsClient();
+  const supabase = await tripsClient();
   if (!supabase) return trip;
 
   const userId = await currentUserId();
@@ -119,7 +119,7 @@ export async function getTrip(id: string): Promise<Trip | null> {
 
   // A trip id is an unguessable capability: holding the link is what grants
   // access, which is the shared-itinerary behaviour the product intends.
-  const supabase = tripsClient();
+  const supabase = await tripsClient();
   if (!supabase) return null;
 
   const { data, error } = await supabase.from("trips").select("payload").eq("id", id).maybeSingle();
@@ -147,7 +147,7 @@ export async function listTripsForCurrentUser(): Promise<TripSummary[]> {
   const userId = await currentUserId();
   if (!userId) return [];
 
-  const supabase = tripsClient();
+  const supabase = await tripsClient();
   if (!supabase) return [];
 
   const { data, error } = await supabase

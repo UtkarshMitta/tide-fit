@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   const { tripId } = (await request.json().catch(() => ({}))) as { tripId?: string };
   if (!tripId) return NextResponse.json({ error: "Provide a tripId." }, { status: 400 });
 
-  const accessToken = getGoogleAccessToken();
+  const accessToken = await getGoogleAccessToken();
   if (!accessToken) {
     return NextResponse.json(
       { error: "Connect Google Calendar first.", needsAuth: true },

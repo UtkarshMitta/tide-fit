@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   // authorize with the shared app — avoids storing unused credentials.
   if (serverEnv.stravaClientId && serverEnv.stravaClientSecret) {
     return NextResponse.json({
-      authorizeUrl: getStravaAuthUrl(createOAuthState("strava", returnTo), {
+      authorizeUrl: getStravaAuthUrl(await createOAuthState("strava", returnTo), {
         clientId: serverEnv.stravaClientId,
         clientSecret: serverEnv.stravaClientSecret,
         source: "env",
@@ -61,10 +61,10 @@ export async function POST(request: Request) {
     );
   }
 
-  persistStravaAppCredentials(clientId, clientSecret);
+  await persistStravaAppCredentials(clientId, clientSecret);
 
   return NextResponse.json({
-    authorizeUrl: getStravaAuthUrl(createOAuthState("strava", returnTo), {
+    authorizeUrl: getStravaAuthUrl(await createOAuthState("strava", returnTo), {
       clientId,
       clientSecret,
       source: "user",

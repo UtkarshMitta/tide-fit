@@ -9,10 +9,10 @@ import { publicEnv } from "@/lib/env.public";
  * Server-side Supabase. Optional: when the env vars are absent this returns
  * null and the app falls back to anonymous, in-memory trips.
  */
-export function createServerSupabase() {
+export async function createServerSupabase() {
   if (!publicEnv.supabaseUrl || !publicEnv.supabaseAnonKey) return null;
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   return createServerClient(publicEnv.supabaseUrl, publicEnv.supabaseAnonKey, {
     cookies: {
       getAll() {
@@ -32,7 +32,7 @@ export function createServerSupabase() {
 }
 
 export async function getCurrentUser() {
-  const supabase = createServerSupabase();
+  const supabase = await createServerSupabase();
   if (!supabase) return null;
   const { data } = await supabase.auth.getUser();
   return data.user ?? null;

@@ -9,5 +9,5 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Google Calendar is not configured." }, { status: 503 });
   }
   const returnTo = new URL(request.url).searchParams.get("returnTo") ?? "/";
-  return NextResponse.redirect(getGoogleAuthUrl(createOAuthState("google", returnTo)));
+  return NextResponse.redirect(getGoogleAuthUrl(await createOAuthState("google", returnTo)));
 }

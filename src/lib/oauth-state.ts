@@ -69,9 +69,13 @@ function constantTimeEquals(a: string, b: string): boolean {
  * Mints the `state` for an authorize redirect and remembers its nonce. Returns
  * the opaque string to hand to the provider.
  */
-export function createOAuthState(provider: OAuthProvider, returnTo: string): string {
+export async function createOAuthState(
+  provider: OAuthProvider,
+  returnTo: string,
+): Promise<string> {
   const nonce = randomBytes(NONCE_BYTES).toString("base64url");
-  cookies().set(cookieName(provider), nonce, {
+  const cookieStore = await cookies();
+  cookieStore.set(cookieName(provider), nonce, {
     httpOnly: true,
     secure: serverEnv.appUrl.startsWith("https"),
     sameSite: "lax",
@@ -91,8 +95,11 @@ export interface ConsumedState {
  * given state is only ever good once. `returnTo` is always safe to redirect to
  * whether or not validation passed.
  */
-export function consumeOAuthState(provider: OAuthProvider, state: string | null): ConsumedState {
-  const cookieStore = cookies();
+export async function consumeOAuthState(
+  provider: OAuthProvider,
+  state: string | null,
+): Promise<ConsumedState> {
+  const cookieStore = await cookies();
   const expected = cookieStore.get(cookieName(provider))?.value;
 
   // One-shot: drop the nonce whatever the outcome, so a replay cannot match.
