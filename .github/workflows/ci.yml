@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -20,3 +23,31 @@ jobs:
       - run: npm test
       # Builds with no secrets configured, which is the documented zero-key path.
       - run: npm run build
+
+  # Deploys main to https://tide-fit.vercel.app, but only after every check above
+  # has passed. Vercel's own GitHub integration can't be used here: it only lets
+  # the repository owner connect a personal repo, so this uses the CLI with a
+  # token stored as the VERCEL_TOKEN repository secret.
+  deploy:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Never run two production deploys at once; queue instead of cancelling.
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    env:
+      # Identifiers, not credentials: they name the Vercel project to deploy to.
+      VERCEL_ORG_ID: team_AHC9TRIEIg2xhd8ajODYtMYf
+      VERCEL_PROJECT_ID: prj_m4NzVBJhP7DYduS1DYwpxEghQDEU
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --global vercel@59.26.0
+      - run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - run: vercel build --prod --token="$VERCEL_TOKEN"
+      - run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"

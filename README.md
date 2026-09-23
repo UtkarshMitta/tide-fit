@@ -267,7 +267,9 @@ Live demos break when sponsor APIs rate-limit on stage, so there are three layer
 
 ## Deploying
 
-Push to GitHub, import into Vercel, and add the same environment variables. Set
+This repository deploys itself: every push to `main` runs the CI checks and, only if they all pass, deploys to <https://tide-fit.vercel.app> (the `deploy` job in `.github/workflows/ci.yml`, authenticated by a `VERCEL_TOKEN` repository secret).
+
+For your own copy: push to GitHub, import into Vercel, and add the same environment variables. Set
 `NEXT_PUBLIC_APP_URL` to your deployed origin so the OAuth redirect URIs match.
 
 Serverless instances don't share memory, so a deployment needs durable storage for shared trip
