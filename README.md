@@ -18,7 +18,11 @@ Originally built for the Checkout Travel & Hospitality Hackathon.
 
 ## Try it
 
-No API keys, accounts or configuration are needed for any of these. With nothing set you still get
+**See it live: <https://tide-fit.vercel.app>** — plan a trip, or open the
+[sample Lisbon trip](https://tide-fit.vercel.app/trip/demo-lisbon). The live site runs with no paid
+API keys, so itineraries are rule-based rather than LLM-written; everything else is the real thing.
+
+To run your own copy, none of these need API keys, accounts or configuration. With nothing set you still get
 live condition data from Open-Meteo, real safety classification, a rule-based itinerary and a
 device-voice briefing.
 
@@ -268,7 +272,18 @@ Push to GitHub, import into Vercel, and add the same environment variables. Set
 
 Serverless instances don't share memory, so a deployment needs durable storage for shared trip
 links to work. The Deploy button handles this by attaching a private Vercel Blob store. On a manual
-import, add one under **Storage → Create → Blob** and connect it to the project. With neither Blob
+import, add one under **Storage → Create → Blob** and connect it to the project. From the CLI:
+
+```bash
+npx vercel link --yes
+npx vercel blob create-store tidefit-trips --access private --yes
+npx vercel deploy --prod
+```
+
+`.vercelignore` keeps every local `.env*` file out of CLI uploads, so a Supabase service-role key in
+your `.env.local` can't end up in a deployment by accident. Note that `vercel link` writes a
+short-lived `VERCEL_OIDC_TOKEN` into `.env.local`, and may add a broad `.env*` rule to `.gitignore`
+that would also hide `.env.example`; the existing `.env*.local` rule already covers the secrets. With neither Blob
 nor Supabase, a shared link can 404 when a different instance serves it. Supabase takes priority
 over Blob when both are configured, and adds sign-in and per-user trip lists.
 

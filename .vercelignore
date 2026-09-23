@@ -1,0 +1,5 @@
+# Never upload local env files from a CLI deploy. .env.local can hold a Supabase
+# service-role key, which bypasses row-level security; a deployment gets its
+# configuration from Vercel project settings instead.
+.env*
+!.env.example
