@@ -48,10 +48,12 @@
 -- session. Those explicit filters are load-bearing — the service role bypasses
 -- RLS, so a missing .eq("user_id", ...) would leak other users' rows.
 
+-- Safe to re-run: every policy is dropped by name before it is created.
 begin;
 
 -- Read: owners only. Server-side reads use the service role, which bypasses RLS.
 drop policy if exists "trips are readable by link" on public.trips;
+drop policy if exists "owners can read their trips" on public.trips;
 create policy "owners can read their trips"
   on public.trips for select
   using (user_id is not null and user_id = auth.uid());
@@ -59,6 +61,7 @@ create policy "owners can read their trips"
 -- Write: a signed-in client may only insert rows it owns. Anonymous trips are
 -- written by the server with the service role, not by the browser.
 drop policy if exists "anyone can create a trip" on public.trips;
+drop policy if exists "signed-in users create their own trips" on public.trips;
 create policy "signed-in users create their own trips"
   on public.trips for insert
   with check (user_id is not null and user_id = auth.uid());
