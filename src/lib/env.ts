@@ -1,5 +1,24 @@
 import { publicEnv } from "@/lib/env.public";
 
+/**
+ * Public base URL, used for OAuth redirect URIs, the redirects after an OAuth
+ * callback, cookie `Secure` flags and links written into calendar events.
+ *
+ * On Vercel the fallback is the project's production domain, never the
+ * per-deployment URL. Deployment URLs change on every deploy, so they can never
+ * match a redirect URI registered with Strava or Google, and they sit behind
+ * Vercel's Deployment Protection: a visitor sent there lands on a Vercel login
+ * page. `||` rather than `??` so an empty `NEXT_PUBLIC_APP_URL=` copied from
+ * .env.example counts as unset. A trailing slash is dropped so paths join
+ * cleanly.
+ */
+export function resolveAppUrl(env: Record<string, string | undefined> = process.env): string {
+  const explicit = env.NEXT_PUBLIC_APP_URL?.trim();
+  if (explicit) return explicit.replace(/\/+$/, "");
+  const vercelHost = env.VERCEL_PROJECT_PRODUCTION_URL || env.VERCEL_URL;
+  return vercelHost ? `https://${vercelHost}` : "http://localhost:3000";
+}
+
 /** Server-side integration config. Every key is optional: TideFit degrades feature by feature. */
 export const serverEnv = {
   tavilyApiKey: process.env.TAVILY_API_KEY,
@@ -20,9 +39,7 @@ export const serverEnv = {
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
   stravaClientId: process.env.STRAVA_CLIENT_ID,
   stravaClientSecret: process.env.STRAVA_CLIENT_SECRET,
-  appUrl:
-    process.env.NEXT_PUBLIC_APP_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000"),
+  appUrl: resolveAppUrl(),
   /** Forces the canned Lisbon trip for every request — the on-stage panic switch. */
   demoMode: process.env.TIDEFIT_DEMO_MODE === "true",
 };

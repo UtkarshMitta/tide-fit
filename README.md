@@ -180,7 +180,7 @@ Condition data from Open-Meteo (geocoding, marine, forecast, air quality) needs 
 | `TIDEFIT_SECRET_KEY` | Encrypts visitor-pasted Strava secrets before they touch a cookie | The paste-your-own-credentials path is refused |
 | `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` | Google Calendar sync | Sync button disabled |
 | `STRAVA_CLIENT_ID` + `STRAVA_CLIENT_SECRET` | Training-load-aware intensity for every visitor | Each visitor can supply their own app credentials instead |
-| `NEXT_PUBLIC_APP_URL` | Base URL used to build OAuth redirect URIs | Falls back to `VERCEL_URL` when deployed on Vercel, else `http://localhost:3000` |
+| `NEXT_PUBLIC_APP_URL` | Base URL for OAuth redirect URIs and links in calendar events | On Vercel, the project's production domain (automatic); otherwise `http://localhost:3000` |
 | `TIDEFIT_DEMO_MODE` | Forces the canned Lisbon trip for every request | Normal planning |
 
 ### Optional setup
@@ -269,8 +269,9 @@ Live demos break when sponsor APIs rate-limit on stage, so there are three layer
 
 This repository deploys itself: every push to `main` runs the CI checks and, only if they all pass, deploys to <https://tide-fit.vercel.app> (the `deploy` job in `.github/workflows/ci.yml`, authenticated by a `VERCEL_TOKEN` repository secret).
 
-For your own copy: push to GitHub, import into Vercel, and add the same environment variables. Set
-`NEXT_PUBLIC_APP_URL` to your deployed origin so the OAuth redirect URIs match.
+For your own copy: push to GitHub, import into Vercel, and add the same environment variables. OAuth
+redirect URIs use the project's production domain automatically (`VERCEL_PROJECT_PRODUCTION_URL`);
+set `NEXT_PUBLIC_APP_URL` only if you serve the app from a custom domain.
 
 Serverless instances don't share memory, so a deployment needs durable storage for shared trip
 links to work. The Deploy button handles this by attaching a private Vercel Blob store. On a manual
@@ -341,7 +342,7 @@ The repository has been audited; findings, severities and what was fixed are in
   trip id is a secret.
 - **Visitor-pasted Strava secrets are encrypted before they reach a cookie.** They are sealed with
   AES-256-GCM under `TIDEFIT_SECRET_KEY` and stored for 7 days (`httpOnly`, `SameSite=lax`, and
-  `Secure` whenever `NEXT_PUBLIC_APP_URL` is `https`), so the cookie carries ciphertext rather than
+  `Secure` whenever the app's public URL is `https`), so the cookie carries ciphertext rather than
   a usable credential. Without that key the paste path is refused outright. Host-configured
   `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` remains the simplest option for a public deployment,
   since then no visitor secret exists at all.
