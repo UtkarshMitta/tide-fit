@@ -16,25 +16,54 @@ Originally built for the Checkout Travel & Hospitality Hackathon.
 
 ---
 
-## Quick start
+## Try it
+
+No API keys, accounts or configuration are needed for any of these. With nothing set you still get
+live condition data from Open-Meteo, real safety classification, a rule-based itinerary and a
+device-voice briefing.
+
+**In your browser, nothing to install:**
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/UtkarshMitta/tide-fit?quickstart=1)
+
+GitHub builds the project in a cloud machine, starts it, and opens the app in a new tab. The first
+start takes a couple of minutes while dependencies install. Codespaces is free within GitHub's
+monthly allowance for personal accounts.
+
+**Your own live copy on the web:**
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FUtkarshMitta%2Ftide-fit)
+
+Vercel copies the repo to your GitHub account and deploys it to a public URL. Leave every
+environment variable blank. Without Supabase, planned trips live in the memory of whichever server
+handled them, so a trip link can occasionally 404 when shared. The sample trip always works. Add
+Supabase later (see [Deploying](#deploying)) for links that last.
+
+**On your own machine:**
 
 ```bash
+git clone https://github.com/UtkarshMitta/tide-fit.git
+cd tide-fit
+nvm use                      # or install Node 22+ any other way
 npm install
 cp .env.example .env.local   # every key is optional
 npm run dev
 ```
 
-Open <http://localhost:3000> and plan a trip. **You need no API keys to run this** — with an empty
-`.env.local` you still get live condition data from Open-Meteo, real safety classification, a
-rule-based itinerary and a device-voice briefing.
+Then open <http://localhost:3000>.
 
-Requires **Node 22 or newer**.
+### What you'll see
+
+Enter a destination, pick dates and sports, and you get a day-by-day plan with a **safe / caution /
+unsafe** verdict for each sport and the measurement behind each verdict. With the optional keys set,
+the plan also names real local spots and lists bookable stays nearby. To see a finished example without planning anything, open **`/trip/demo-lisbon`**. It's a
+3-day Lisbon trip where day 2 refuses an open-water swim in 1.9 m surf and moves the session
+inland.
+
+![The sample Lisbon trip, with day 2 marked unsafe for swimming](docs/demo-trip.png)
 
 Adding keys turns on more, feature by feature — see [Configuration](#configuration). Nothing breaks
 when a key is missing; that feature just degrades.
-
-Want to see the finished article without planning anything? Visit
-[`/trip/demo-lisbon`](http://localhost:3000/trip/demo-lisbon) for a canned 3-day Lisbon trip.
 
 ---
 
