@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { type BlobClient, blobAvailable, loadTripBlob, saveTripBlob } from "@/lib/blob-store";
 import { classifyDay, classifyMetric } from "@/lib/conditions";
 import { safeReturnPath } from "@/lib/oauth-state";
 import { selectVerdict } from "@/lib/rls-verdict";
@@ -365,4 +366,67 @@ test("an explicit PostgREST refusal passes", () => {
     actualRows: null,
   });
   assert.equal(verdict.status, "pass");
+});
+
+// ---------------------------------------------------------------------------
+// Vercel Blob trip storage
+//
+// Serverless instances do not share memory, so without a durable store a
+// shared trip link 404s on any instance but the one that built it.
+// ---------------------------------------------------------------------------
+
+function fakeBlob() {
+  const objects = new Map<string, string>();
+  const calls: string[] = [];
+  const client: BlobClient = {
+    async put(pathname, body) {
+      calls.push(`put ${pathname}`);
+      objects.set(pathname, body);
+    },
+    async get(pathname) {
+      calls.push(`get ${pathname}`);
+      const body = objects.get(pathname);
+      return body === undefined ? null : { stream: new Response(body).body };
+    },
+  };
+  return { client, objects, calls };
+}
+
+const sampleTrip = { id: "0b1c2d3e-4f50-4617-8293-a4b5c6d7e8f9", input: { destination: "Lisbon" } } as unknown as Parameters<typeof saveTripBlob>[0];
+
+test("a trip saved to Blob reads back identically", async () => {
+  const { client } = fakeBlob();
+  await saveTripBlob(sampleTrip, client);
+  assert.deepEqual(await loadTripBlob(sampleTrip.id, client), sampleTrip);
+});
+
+test("a trip that was never saved reads as absent, not an error", async () => {
+  const { client } = fakeBlob();
+  assert.equal(await loadTripBlob("11111111-2222-4333-8444-555555555555", client), null);
+});
+
+test("ids that are not trip UUIDs never reach the store", async () => {
+  const { client, calls } = fakeBlob();
+  for (const id of ["demo-lisbon", "../secrets", "trips/x", "", "0b1c2d3e-4f50-4617-8293-a4b5c6d7e8f9/../x"]) {
+    assert.equal(await loadTripBlob(id, client), null);
+  }
+  assert.deepEqual(calls, []);
+});
+
+test("a Blob outage degrades to 'not found' instead of breaking the page", async () => {
+  const failing: BlobClient = {
+    put: async () => { throw new Error("BlobServiceNotAvailable"); },
+    get: async () => { throw new Error("BlobServiceNotAvailable"); },
+  };
+  await saveTripBlob(sampleTrip, failing); // must not throw
+  assert.equal(await loadTripBlob(sampleTrip.id, failing), null);
+});
+
+test("Blob counts as available with either credential a Vercel store can set", () => {
+  // A store connected to a project sets BLOB_STORE_ID and authenticates via
+  // OIDC — it never sets the read-write token. Missing this case would quietly
+  // send fresh deployments back to per-instance memory.
+  assert.equal(blobAvailable({ BLOB_STORE_ID: "store_abc" }), true);
+  assert.equal(blobAvailable({ BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_x" }), true);
+  assert.equal(blobAvailable({}), false);
 });
