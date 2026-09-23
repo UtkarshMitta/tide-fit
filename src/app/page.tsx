@@ -6,6 +6,7 @@ import { TripForm } from "@/components/TripForm";
 import { DEMO_TRIP_ID } from "@/lib/demo";
 import { integrationStatus } from "@/lib/env";
 import { SPORT_EMOJI } from "@/lib/risk-ui";
+import { sealingAvailable } from "@/lib/seal";
 import { isStravaConnected } from "@/lib/strava";
 import { listTripsForCurrentUser } from "@/lib/store";
 import { getCurrentUser } from "@/lib/supabase";
@@ -52,6 +53,10 @@ export default async function HomePage() {
   // paste-your-own-credentials path it read "not configured" even while a
   // visitor was connected — which reads as an unimplemented feature.
   const stravaConnected = await isStravaConnected();
+  // Offer Strava only where a visitor can actually finish connecting: either the
+  // host configured a shared app, or pasted secrets can be sealed. Otherwise the
+  // form leads straight to a 503.
+  const stravaOffered = integrationStatus.strava || sealingAvailable() || stravaConnected;
 
   return (
     <main className="mx-auto w-full max-w-5xl px-5 py-10 sm:px-8 sm:py-16">
@@ -90,9 +95,11 @@ export default async function HomePage() {
 
       <section className="mt-10">
         <TripForm demoTripId={DEMO_TRIP_ID} />
-        <div className="mt-4">
-          <StravaConnect hostConfigured={integrationStatus.strava} connected={stravaConnected} />
-        </div>
+        {stravaOffered ? (
+          <div className="mt-4">
+            <StravaConnect hostConfigured={integrationStatus.strava} connected={stravaConnected} />
+          </div>
+        ) : null}
       </section>
 
       {savedTrips.length > 0 ? (

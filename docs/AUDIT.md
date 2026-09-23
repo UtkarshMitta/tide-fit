@@ -19,7 +19,7 @@ Several plausible-looking issues turned out to be defused by design; those are r
 | # | Finding | Severity | Status |
 |---|---|---|---|
 | 1 | OAuth callbacks accept any code — no CSRF binding | High | **Fixed** |
-| 2 | Supabase RLS exposes every trip to anyone with the anon key | High | Code **landed** + verifier; migration still to run |
+| 2 | Supabase RLS exposes every trip to anyone with the anon key | High | **Fixed** — migration applied; `check:rls` passes |
 | 3 | Strava application client secret stored in a browser cookie | High | **Fixed** — sealed with AES-256-GCM |
 | 4 | No rate limiting on the endpoints that spend money | High | **Fixed** |
 | 5 | Poisoned search results reach the itinerary prompt unfiltered | Medium | **Fixed** (defence in depth) |
@@ -29,7 +29,7 @@ Several plausible-looking issues turned out to be defused by design; those are r
 | 9 | Strava status pill can never light up on the paste-credentials path | Low | **Fixed** |
 | 10 | `/auth/callback` missed the `//` guard the other callbacks had | Low | **Fixed** |
 | 11 | Trip cache reads stale data ahead of Supabase; disk mirror never evicted | Low | Reported |
-| 12 | No CI, no tests, no LICENSE | Low | CI + tests **added**; LICENSE reported |
+| 12 | No CI, no tests, no LICENSE | Low | **Fixed** — CI, tests and a 0BSD license added |
 
 ---
 
@@ -165,7 +165,7 @@ Two further policies are looser than intended: `insert` lets an unauthenticated 
 arbitrary rows, and `update using (user_id is null or ...)` lets anyone rewrite **any** anonymous
 trip, including one another visitor is about to open.
 
-**Status: the code half is done; the migration is still yours to run.**
+**Status: fixed.** The migration has been applied, and `npm run check:rls` against the project reports all three checks passing: the trips table holds rows, the public key reads none of them, and anonymous inserts are refused.
 
 Link sharing never needed public SELECT — nothing reads trips from the browser; `getTrip` and
 `listTripsForCurrentUser` are both server-side. So trips can be owner-only at the RLS layer while
@@ -365,6 +365,27 @@ Recording these so they do not get re-audited later:
 
 ---
 
+## Deployment
+
+TideFit is live at <https://tide-fit.vercel.app>, deployed with no paid API keys.
+
+Serverless instances do not share memory, so without Supabase a shared trip link used to 404 whenever
+a different instance served it. Trips are now stored as private objects in a Vercel Blob store
+(`src/lib/blob-store.ts`), which the README's Deploy button creates automatically. Verified on the
+live deployment:
+
+- A trip planned before a full redeploy (every instance replaced) loaded on 5 of 5 attempts
+  afterwards, with identical verdicts. It could only have come from Blob.
+- The stored object returns 403 at its storage URL without credentials, so the store is private.
+- A nonexistent trip id returns 404.
+- The live site reports Supabase as not configured. `.vercelignore` keeps local `.env*` files, which
+  can hold a service-role key, out of CLI uploads.
+- The Strava option is hidden on deployments that cannot complete a connection, instead of leading
+  visitors to a 503.
+
+Known limits of a public demo: the rate limiter is per instance, stored trips never expire, and all
+visitors share one Open-Meteo quota. See the README's Deploying section.
+
 ## Verification
 
 All checks run against this branch:
@@ -372,7 +393,7 @@ All checks run against this branch:
 ```bash
 npm run typecheck   # clean
 npm run lint        # clean
-npm test            # 13/13 pass
+npm test            # 41/41 pass
 npm run build       # succeeds with zero keys configured
 npm run check:conditions -- "Lisbon" "Denver"
 ```
