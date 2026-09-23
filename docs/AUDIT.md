@@ -30,6 +30,9 @@ Several plausible-looking issues turned out to be defused by design; those are r
 | 10 | `/auth/callback` missed the `//` guard the other callbacks had | Low | **Fixed** |
 | 11 | Trip cache reads stale data ahead of Supabase; disk mirror never evicted | Low | Reported |
 | 12 | No CI, no tests, no LICENSE | Low | **Fixed** — CI, tests and a 0BSD license added |
+| 13 | One dead export and two unused dependencies | Low | **Fixed** — removed |
+| 14 | Trip form unsubmittable every evening in the Americas | High | **Fixed** — found after the audit |
+| 15 | OAuth redirects built from a login-protected, per-deployment URL | Medium | **Fixed** — found after the audit |
 
 ---
 
@@ -383,8 +386,54 @@ live deployment:
 - The Strava option is hidden on deployments that cannot complete a connection, instead of leading
   visitors to a 503.
 
-Known limits of a public demo: the rate limiter is per instance, stored trips never expire, and all
-visitors share one Open-Meteo quota. See the README's Deploying section.
+**Automatic deploys.** Every push to `main` runs the CI checks and, only if all pass, deploys to
+production (the `deploy` job in `.github/workflows/ci.yml`). Vercel's GitHub integration was not an
+option: for a personal repository only the owner can connect it, and the project lives on a
+collaborator's Vercel account. The job authenticates with a `VERCEL_TOKEN` repository secret. That
+token must have **Full Account** scope: a diagnostic run showed the CLI first requests `/v2/user`
+(404 for a project-scoped token) and the team (403), and gives up before it reaches the project,
+which a project-scoped token can read. Anyone with write access to the repository can read the
+secret through a workflow, so it carries an expiry.
+
+**Edge rate limiting.** A Vercel Firewall rule limits `/api/` to 20 requests per 60 seconds per IP,
+answering 429. Verified: of 25 rapid requests, exactly 20 reached the app and 5 were refused with
+`x-vercel-mitigated: deny`, while non-API pages were unaffected. Unlike the in-process limiter it holds
+across instances, which also bounds Blob growth and the shared Open-Meteo quota.
+
+Remaining limits of a public demo: stored trips never expire, and Vercel's Hobby plan and Open-Meteo's
+free API are both licensed for non-commercial use only. See the README's "Running it in public".
+
+## Found after the audit
+
+### 14. The trip form could not be submitted every evening in the Americas — High
+
+Surfaced by a hydration error while testing the Codespaces setup. `TripForm.tsx` took the start
+date's default and its `min` from `todayIso()` at render time. On the server that is UTC, so from
+8 pm US Eastern (5 pm Pacific) the server's "today" is already tomorrow. React does not patch
+attribute mismatches during hydration ("this won't be patched up"), so the browser kept the server's
+`min` (tomorrow) while showing the client's value (today). The default date then sat below the field's
+own minimum, and the browser refused to submit: *"Value must be <tomorrow> or later."* The main
+action on the live site silently did nothing for Americas visitors every evening.
+
+Reproduced with the dev server in UTC+14 against a browser on US Eastern time, where
+`checkValidity()` returned false. Fixed by reading the date through `useSyncExternalStore` with an
+empty server snapshot: the server renders the field blank, hydration matches, and the browser fills
+in its local date. After the fix, in the same setup: no hydration errors, `min` and value both the
+local date, and submitting plans a trip starting that day.
+
+The error seen in Codespaces also carried a second, harmless cause: the Dark Reader extension adds
+`data-darkreader-proxy-injected` to `<html>` before React loads. `suppressHydrationWarning` on
+`<html>`, the documented escape hatch, covers that element's own attributes only.
+
+### 15. OAuth redirects built from a login-protected, per-deployment URL — Medium
+
+Without `NEXT_PUBLIC_APP_URL`, the public base URL fell back to `VERCEL_URL`, the per-deployment
+address. It changes on every deploy, so it can never match a redirect URI registered with Strava or
+Google, and it sits behind Vercel's Deployment Protection: on the live project it 302s to Vercel's
+login while `tide-fit.vercel.app` returns 200. A visitor finishing sign-in, or following a link in a
+synced calendar event, would have landed on a Vercel login page. `resolveAppUrl()` now prefers an
+explicit URL, then `VERCEL_PROJECT_PRODUCTION_URL`, and treats an empty `NEXT_PUBLIC_APP_URL=` as
+unset. Latent until now because no sign-in is configured on the live site.
 
 ## Verification
 
@@ -393,7 +442,7 @@ All checks run against this branch:
 ```bash
 npm run typecheck   # clean
 npm run lint        # clean
-npm test            # 41/41 pass
+npm test            # 45/45 pass
 npm run build       # succeeds with zero keys configured
 npm run check:conditions -- "Lisbon" "Denver"
 ```
