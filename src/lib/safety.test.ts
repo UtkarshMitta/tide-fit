@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { classifyDay, classifyMetric } from "@/lib/conditions";
 import { safeReturnPath } from "@/lib/oauth-state";
+import { selectVerdict } from "@/lib/rls-verdict";
 import { sanitiseForPrompt } from "@/lib/search";
 import { SealingUnavailableError, seal, sealingAvailable, unseal } from "@/lib/seal";
 import { isPropertyPage, cleanPropertyName } from "@/lib/lodging";
@@ -323,4 +324,45 @@ test("rotating the sealing key invalidates values sealed under the old one", () 
 
   process.env.TIDEFIT_SECRET_KEY = "first-key";
   assert.equal(unseal(sealed), "secret-value", "rotating back must restore the old values");
+});
+
+// ---------------------------------------------------------------------------
+// check:rls verdicts
+//
+// RLS filters a SELECT rather than refusing it, so the anon key alone cannot
+// tell a protected table from an empty one.
+// ---------------------------------------------------------------------------
+
+test("a locked table with rows passes even though the anon read returns no error", () => {
+  assert.equal(selectVerdict({ anonRows: 0, anonError: null, actualRows: 3 }).status, "pass");
+});
+
+test("rows readable with the public key fail", () => {
+  assert.equal(selectVerdict({ anonRows: 2, anonError: null, actualRows: 2 }).status, "fail");
+});
+
+test("an empty table is inconclusive, not a pass", () => {
+  assert.equal(selectVerdict({ anonRows: 0, anonError: null, actualRows: 0 }).status, "inconclusive");
+});
+
+test("without the service role an empty anon read is inconclusive", () => {
+  assert.equal(selectVerdict({ anonRows: 0, anonError: null, actualRows: null }).status, "inconclusive");
+});
+
+test("an unreachable project is inconclusive, never a pass", () => {
+  const verdict = selectVerdict({
+    anonRows: null,
+    anonError: { message: "TypeError: fetch failed" },
+    actualRows: null,
+  });
+  assert.equal(verdict.status, "inconclusive");
+});
+
+test("an explicit PostgREST refusal passes", () => {
+  const verdict = selectVerdict({
+    anonRows: null,
+    anonError: { code: "42501", message: "permission denied for table trips" },
+    actualRows: null,
+  });
+  assert.equal(verdict.status, "pass");
 });
