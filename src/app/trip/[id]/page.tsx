@@ -14,7 +14,8 @@ import { formatDayLabel } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export default async function TripPage({ params }: { params: { id: string } }) {
+export default async function TripPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const trip = await getTrip(params.id);
   if (!trip) notFound();
 

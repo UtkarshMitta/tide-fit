@@ -6,8 +6,12 @@ import { publicEnv } from "@/lib/env.public";
 /**
  * Server Components cannot write cookies, so the Supabase session is refreshed
  * here instead. Without Supabase configured this is a pass-through.
+ *
+ * This is the `proxy` convention Next 16 replaced `middleware` with. It does no
+ * authorization — route protection lives in the route handlers and Supabase
+ * RLS, deliberately, so that a bypass here cannot become an auth bypass.
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   if (!publicEnv.supabaseUrl || !publicEnv.supabaseAnonKey) return response;

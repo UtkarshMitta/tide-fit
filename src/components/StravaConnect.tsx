@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 /**
  * Optional Strava connect. Visitors can skip it entirely. To connect they
@@ -11,6 +11,13 @@ import { useRouter } from "next/navigation";
  * When the host already configured STRAVA_* in env, the credential form is
  * skipped and Connect goes straight to OAuth.
  */
+/** Post-OAuth status is carried back in the query string by the callback route. */
+const STATUS_BANNERS: Record<string, string> = {
+  connected: "Strava connected — your recent training will shape the plan.",
+  denied: "Strava authorization was cancelled.",
+  error: "Could not connect Strava. Check your Client ID and Secret.",
+};
+
 export function StravaConnect({
   hostConfigured,
   connected,
@@ -25,18 +32,20 @@ export function StravaConnect({
   const [clientSecret, setClientSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [banner, setBanner] = useState<string | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
-  useEffect(() => {
-    const status = new URLSearchParams(window.location.search).get("strava");
-    if (status === "connected") setBanner("Strava connected — your recent training will shape the plan.");
-    if (status === "denied") setBanner("Strava authorization was cancelled.");
-    if (status === "error") setBanner("Could not connect Strava. Check your Client ID and Secret.");
-  }, []);
+  // Derived from the URL rather than copied into state by an effect, which
+  // would cause a cascading render on every mount.
+  const searchParams = useSearchParams();
+  const banner = bannerDismissed
+    ? null
+    : (STATUS_BANNERS[searchParams.get("strava") ?? ""] ?? null);
 
   async function connectWithHostApp() {
     setBusy(true);
     setError(null);
+    // Full-page navigation: this route handler 302s to strava.com.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.href = "/api/strava/authorize?returnTo=/";
   }
 
@@ -66,7 +75,7 @@ export function StravaConnect({
     setBusy(true);
     await fetch("/api/strava/disconnect", { method: "POST" });
     setBusy(false);
-    setBanner(null);
+    setBannerDismissed(true);
     setOpen(false);
     router.refresh();
   }

@@ -51,7 +51,7 @@ export default async function HomePage() {
   // The footer pill tracked STRAVA_* env only, so on a deployment using the
   // paste-your-own-credentials path it read "not configured" even while a
   // visitor was connected — which reads as an unimplemented feature.
-  const stravaConnected = isStravaConnected();
+  const stravaConnected = await isStravaConnected();
 
   return (
     <main className="mx-auto w-full max-w-5xl px-5 py-10 sm:px-8 sm:py-16">

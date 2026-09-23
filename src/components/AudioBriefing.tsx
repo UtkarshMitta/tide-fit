@@ -178,7 +178,7 @@ export function AudioBriefing({
       </div>
 
       {audioUrl ? (
-        // eslint-disable-next-line jsx-a11y/media-has-caption -- the same script is rendered as text on the card
+        // The same script is rendered as text on the card, so the audio needs no track.
         <audio className="mt-3 w-full" src={audioUrl} controls autoPlay preload="none" />
       ) : null}
 

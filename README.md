@@ -176,7 +176,7 @@ Condition data from Open-Meteo (geocoding, marine, forecast, air quality) needs 
 npm run dev          # dev server on :3000
 npm test             # unit tests (node:test via tsx)
 npm run typecheck    # tsc --noEmit
-npm run lint         # next lint
+npm run lint         # eslint (flat config)
 npm run build        # production build; works with zero keys
 npm run check:rls    # probes your Supabase project the way an attacker would
 ```
@@ -277,16 +277,14 @@ PostgREST for the trips table, exactly as an attacker would, and tells you wheth
 policies are actually in force. A network failure is reported as inconclusive rather than as a
 pass — it never hands back a false all-clear.
 
-Next.js 14 is out of active support and `npm audit` reports advisories against it. The two
-critical-rated ones are not reachable in this app's configuration — it uses no `next/image` and no
-Server Actions, and is not Windows-hosted — but a deliberate upgrade to a supported major is
-outstanding. The analysis is in `docs/AUDIT.md`.
+`npm audit` currently reports **zero vulnerabilities**. The app runs on Next 16 and React 19; the
+Next 14 advisory set that the audit originally flagged is gone with the upgrade.
 
 ---
 
 ## Stack
 
-Next.js 14 (App Router) · TypeScript · Tailwind CSS · Supabase (auth + saved trips) · Vercel
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS · Supabase (auth + saved trips) · Vercel
 
 **APIs:** Open-Meteo Geocoding, Marine, Forecast and Air Quality (no key) · Tavily (search
 grounding) · OpenAI (itinerary) · ElevenLabs (narration) · Stay22 (Accommodations API + map widget)

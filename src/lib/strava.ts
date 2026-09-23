@@ -42,7 +42,7 @@ export interface StravaAppCredentials {
 }
 
 /** Env credentials win; otherwise use whatever the visitor pasted. */
-export function getStravaCredentials(): StravaAppCredentials | null {
+export async function getStravaCredentials(): Promise<StravaAppCredentials | null> {
   if (serverEnv.stravaClientId && serverEnv.stravaClientSecret) {
     return {
       clientId: serverEnv.stravaClientId,
@@ -51,7 +51,7 @@ export function getStravaCredentials(): StravaAppCredentials | null {
     };
   }
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const clientId = cookieStore.get(CLIENT_ID_COOKIE)?.value?.trim();
   // A cookie that does not open — wrong key, tampered, or written before
   // sealing was enabled — reads as "not connected" rather than an error.
@@ -72,8 +72,11 @@ export function getStravaCredentials(): StravaAppCredentials | null {
  * Seven days rather than thirty: long enough to not be annoying, short enough
  * that an abandoned session stops carrying a third-party secret for a month.
  */
-export function persistStravaAppCredentials(clientId: string, clientSecret: string): void {
-  const cookieStore = cookies();
+export async function persistStravaAppCredentials(
+  clientId: string,
+  clientSecret: string,
+): Promise<void> {
+  const cookieStore = await cookies();
   const options = cookieOptions(60 * 60 * 24 * 7);
   cookieStore.set(CLIENT_ID_COOKIE, clientId.trim(), options);
   cookieStore.set(CLIENT_SECRET_COOKIE, seal(clientSecret.trim()), options);
@@ -112,25 +115,28 @@ async function requestToken(
 }
 
 export async function exchangeStravaCode(code: string): Promise<StravaTokenResponse> {
-  const credentials = getStravaCredentials();
+  const credentials = await getStravaCredentials();
   if (!credentials) throw new Error("Strava credentials are missing.");
   return requestToken(credentials, { code, grant_type: "authorization_code" });
 }
 
-export function persistStravaTokens(tokens: StravaTokenResponse): void {
-  const cookieStore = cookies();
+export async function persistStravaTokens(tokens: StravaTokenResponse): Promise<void> {
+  const cookieStore = await cookies();
   cookieStore.set(ACCESS_COOKIE, tokens.access_token, cookieOptions(60 * 60 * 6));
   cookieStore.set(REFRESH_COOKIE, tokens.refresh_token, cookieOptions(60 * 60 * 24 * 30));
   cookieStore.set(EXPIRY_COOKIE, String(tokens.expires_at), cookieOptions(60 * 60 * 24 * 30));
 }
 
-export function isStravaConnected(): boolean {
-  return Boolean(cookies().get(REFRESH_COOKIE)?.value || cookies().get(ACCESS_COOKIE)?.value);
+export async function isStravaConnected(): Promise<boolean> {
+  const cookieStore = await cookies();
+  return Boolean(
+    cookieStore.get(REFRESH_COOKIE)?.value || cookieStore.get(ACCESS_COOKIE)?.value,
+  );
 }
 
 /** Drops the athlete session and any visitor-pasted app credentials. */
-export function clearStravaConnection(): void {
-  const cookieStore = cookies();
+export async function clearStravaConnection(): Promise<void> {
+  const cookieStore = await cookies();
   for (const name of [
     ACCESS_COOKIE,
     REFRESH_COOKIE,
@@ -144,14 +150,14 @@ export function clearStravaConnection(): void {
 
 /** Returns a usable access token, refreshing it when the stored one has expired. */
 async function getStravaAccessToken(): Promise<string | null> {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const access = cookieStore.get(ACCESS_COOKIE)?.value;
   const expiry = Number(cookieStore.get(EXPIRY_COOKIE)?.value ?? 0);
   const stillValid = access && expiry * 1000 > Date.now() + 60_000;
   if (stillValid) return access;
 
   const refresh = cookieStore.get(REFRESH_COOKIE)?.value;
-  const credentials = getStravaCredentials();
+  const credentials = await getStravaCredentials();
   if (!refresh || !credentials) return access ?? null;
 
   const refreshed = await softFetch("Strava token refresh", () =>
@@ -160,7 +166,7 @@ async function getStravaAccessToken(): Promise<string | null> {
   if (!refreshed) return access ?? null;
 
   try {
-    persistStravaTokens(refreshed);
+    await persistStravaTokens(refreshed);
   } catch {
     // Refresh triggered from a Server Component, where cookies are read-only.
   }

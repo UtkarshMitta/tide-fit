@@ -7,7 +7,7 @@ import { consumeOAuthState } from "@/lib/oauth-state";
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const code = params.get("code");
-  const { valid, returnTo } = consumeOAuthState("google", params.get("state"));
+  const { valid, returnTo } = await consumeOAuthState("google", params.get("state"));
 
   if (!valid) {
     return NextResponse.redirect(`${serverEnv.appUrl}${returnTo}?calendar=error`);
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    persistGoogleToken(await exchangeGoogleCode(code));
+    await persistGoogleToken(await exchangeGoogleCode(code));
     return NextResponse.redirect(`${serverEnv.appUrl}${returnTo}?calendar=connected`);
   } catch (error) {
     console.error("[tidefit] Google OAuth failed:", error);
