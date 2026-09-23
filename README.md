@@ -32,12 +32,12 @@ monthly allowance for personal accounts.
 
 **Your own live copy on the web:**
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FUtkarshMitta%2Ftide-fit)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FUtkarshMitta%2Ftide-fit&stores=%5B%7B%22type%22%3A%22blob%22%2C%22access%22%3A%22private%22%7D%5D)
 
-Vercel copies the repo to your GitHub account and deploys it to a public URL. Leave every
-environment variable blank. Without Supabase, planned trips live in the memory of whichever server
-handled them, so a trip link can occasionally 404 when shared. The sample trip always works. Add
-Supabase later (see [Deploying](#deploying)) for links that last.
+Vercel copies the repo to your GitHub account, creates a private Blob store to keep planned trips
+in, and deploys it to a public URL. Accept the storage step when it's offered and leave every
+environment variable blank. Shared trip links then work from any device. Add Supabase later (see
+[Deploying](#deploying)) if you also want sign-in and a per-user list of saved trips.
 
 **On your own machine:**
 
@@ -170,7 +170,8 @@ Condition data from Open-Meteo (geocoding, marine, forecast, air quality) needs 
 | `STAY22_API_KEY` | Bookable stays with live prices | Tavily search across booking sites — names and links, no prices |
 | `NEXT_PUBLIC_STAY22_AID` | Affiliate id for the map widget | Read back from the API response when `STAY22_API_KEY` is set |
 | `OPENWEATHER_API_KEY` | Air quality via OpenWeatherMap instead of Open-Meteo | Open-Meteo `us_aqi` |
-| `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Sign-in and saved trips | Trips kept in server memory and a temp-dir cache |
+| `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Sign-in and per-user saved trips | No sign-in; trips stored on Blob if available, otherwise in memory |
+| `BLOB_STORE_ID` or `BLOB_READ_WRITE_TOKEN` | Durable trip storage on Vercel Blob; set automatically by the Deploy button | Trips kept in server memory and a temp-dir cache |
 | `SUPABASE_SERVICE_ROLE_KEY` | Owner-only row-level security — **see [Deploying](#deploying)** | Trip storage uses the anon key and the original schema |
 | `TIDEFIT_SECRET_KEY` | Encrypts visitor-pasted Strava secrets before they touch a cookie | The paste-your-own-credentials path is refused |
 | `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` | Google Calendar sync | Sync button disabled |
@@ -237,7 +238,8 @@ src/lib/calendar.ts     Google Calendar OAuth + event creation
 src/lib/strava.ts       Strava OAuth + training load summary
 src/lib/oauth-state.ts  CSRF nonce shared by both OAuth flows
 src/lib/rate-limit.ts   per-IP limits on the endpoints that cost money
-src/lib/store.ts        trip persistence: Supabase, memory and temp-dir cache
+src/lib/store.ts        trip persistence: Supabase, then Vercel Blob, then memory
+src/lib/blob-store.ts   private Vercel Blob storage for trips
 src/lib/demo.ts         the canned Lisbon trip
 src/components/         DayCard, LodgingList, LodgingMap, AudioBriefing, StravaConnect
 supabase/               schema plus the hardened RLS migration
@@ -264,8 +266,11 @@ Live demos break when sponsor APIs rate-limit on stage, so there are three layer
 Push to GitHub, import into Vercel, and add the same environment variables. Set
 `NEXT_PUBLIC_APP_URL` to your deployed origin so the OAuth redirect URIs match.
 
-Supabase is strongly recommended in production: without it, trips are stored per-instance in memory
-and a shared link can 404 on a different serverless instance.
+Serverless instances don't share memory, so a deployment needs durable storage for shared trip
+links to work. The Deploy button handles this by attaching a private Vercel Blob store. On a manual
+import, add one under **Storage → Create → Blob** and connect it to the project. With neither Blob
+nor Supabase, a shared link can 404 when a different instance serves it. Supabase takes priority
+over Blob when both are configured, and adds sign-in and per-user trip lists.
 
 **Before you expose a deployment publicly, do these two things in this order:**
 

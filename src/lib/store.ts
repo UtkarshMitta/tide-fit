@@ -2,13 +2,15 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { blobAvailable, loadTripBlob, saveTripBlob } from "@/lib/blob-store";
 import { DEMO_TRIP_ID, buildDemoTrip } from "@/lib/demo";
 import { createServerSupabase, createServiceSupabase } from "@/lib/supabase";
 import type { Trip } from "@/lib/types";
 
 /**
- * Trips live in Supabase when it is configured. Without it they fall back to a
- * two-tier local cache.
+ * Trips live in Supabase when it is configured, or on Vercel Blob when a Blob
+ * store is attached (the Deploy button creates one). Every write also goes to a
+ * two-tier local cache, which is all a deployment with neither has.
  *
  * The map hangs off `globalThis` because route handlers and server components
  * are separate module graphs — a plain module-level map is written by
@@ -84,7 +86,12 @@ export async function saveTrip(trip: Trip): Promise<Trip> {
   await writeToDisk(trip);
 
   const supabase = await tripsClient();
-  if (!supabase) return trip;
+  if (!supabase) {
+    // Without a durable store a shared link only works on the instance that
+    // built the trip, so persist to Blob whenever one is attached.
+    if (blobAvailable()) await saveTripBlob(trip);
+    return trip;
+  }
 
   const userId = await currentUserId();
   // `trip.id` is a server-minted randomUUID (planner.ts) and is never taken
@@ -120,7 +127,12 @@ export async function getTrip(id: string): Promise<Trip | null> {
   // A trip id is an unguessable capability: holding the link is what grants
   // access, which is the shared-itinerary behaviour the product intends.
   const supabase = await tripsClient();
-  if (!supabase) return null;
+  if (!supabase) {
+    if (!blobAvailable()) return null;
+    const fromBlob = await loadTripBlob(id);
+    if (fromBlob) rememberInMemory(fromBlob);
+    return fromBlob;
+  }
 
   const { data, error } = await supabase.from("trips").select("payload").eq("id", id).maybeSingle();
   if (error) {
