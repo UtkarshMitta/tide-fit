@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { type BlobClient, blobAvailable, loadTripBlob, saveTripBlob } from "@/lib/blob-store";
 import { classifyDay, classifyMetric } from "@/lib/conditions";
+import { resolveAppUrl } from "@/lib/env";
 import { safeReturnPath } from "@/lib/oauth-state";
 import { selectVerdict } from "@/lib/rls-verdict";
 import { sanitiseForPrompt } from "@/lib/search";
@@ -429,4 +430,37 @@ test("Blob counts as available with either credential a Vercel store can set", (
   assert.equal(blobAvailable({ BLOB_STORE_ID: "store_abc" }), true);
   assert.equal(blobAvailable({ BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_x" }), true);
   assert.equal(blobAvailable({}), false);
+});
+
+// ---------------------------------------------------------------------------
+// Public base URL
+//
+// OAuth redirect URIs must match what's registered with Strava and Google, and
+// Vercel's per-deployment URLs are both ever-changing and login-protected.
+// ---------------------------------------------------------------------------
+
+test("an explicit app URL wins, without a trailing slash", () => {
+  assert.equal(
+    resolveAppUrl({ NEXT_PUBLIC_APP_URL: "https://example.com/", VERCEL_PROJECT_PRODUCTION_URL: "x.vercel.app" }),
+    "https://example.com",
+  );
+});
+
+test("on Vercel the production domain is used, not the per-deployment URL", () => {
+  assert.equal(
+    resolveAppUrl({ VERCEL_PROJECT_PRODUCTION_URL: "tide-fit.vercel.app", VERCEL_URL: "tide-abc123-team.vercel.app" }),
+    "https://tide-fit.vercel.app",
+  );
+});
+
+test("an empty NEXT_PUBLIC_APP_URL copied from .env.example counts as unset", () => {
+  assert.equal(
+    resolveAppUrl({ NEXT_PUBLIC_APP_URL: "", VERCEL_PROJECT_PRODUCTION_URL: "tide-fit.vercel.app" }),
+    "https://tide-fit.vercel.app",
+  );
+});
+
+test("without Vercel or an explicit URL, local development is assumed", () => {
+  assert.equal(resolveAppUrl({}), "http://localhost:3000");
+  assert.equal(resolveAppUrl({ VERCEL_URL: "only-deploy.vercel.app" }), "https://only-deploy.vercel.app");
 });
