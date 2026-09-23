@@ -25,7 +25,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    // Extensions such as Dark Reader add attributes to <html> before React loads.
+    // This covers only this element's own attributes, one level deep.
+    <html lang="en" className="dark" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-deep text-slate-100 antialiased`}
       >

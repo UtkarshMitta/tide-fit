@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 import { SPORT_EMOJI } from "@/lib/risk-ui";
 import { SPORTS, SPORT_LABELS, type Sport } from "@/lib/types";
@@ -17,10 +17,30 @@ const STAGE_MESSAGES = [
   "Writing your day-by-day plan…",
 ];
 
+/** "Today" never changes identity within a day, so there is nothing to subscribe to. */
+const subscribeNever = () => () => {};
+
+/**
+ * The visitor's local date, or "" while rendering on the server.
+ *
+ * The server runs in UTC, so from 8 pm US Eastern (5 pm Pacific) it is already
+ * tomorrow there. Rendering the server's "today" as the input's `min` made
+ * React keep that attribute through hydration ("this won't be patched up"),
+ * leaving a form whose default date was below its own minimum: the browser
+ * refused to submit it. useSyncExternalStore hydrates with the server snapshot
+ * and then switches to the browser's date, with no mismatch in between.
+ */
+function useLocalToday(): string {
+  return useSyncExternalStore(subscribeNever, todayIso, () => "");
+}
+
 export function TripForm({ demoTripId }: { demoTripId: string }) {
   const router = useRouter();
   const [destination, setDestination] = useState("Lisbon");
-  const [startDate, setStartDate] = useState(todayIso());
+  const today = useLocalToday();
+  // Only a date the visitor picked is stored; until then the default follows today.
+  const [chosenStartDate, setChosenStartDate] = useState<string | null>(null);
+  const startDate = chosenStartDate ?? today;
   const [days, setDays] = useState(3);
   const [sports, setSports] = useState<Sport[]>(["swimming", "running"]);
   const [stage, setStage] = useState<number | null>(null);
@@ -93,8 +113,8 @@ export function TripForm({ demoTripId }: { demoTripId: string }) {
             className="field"
             type="date"
             value={startDate}
-            min={todayIso()}
-            onChange={(event) => setStartDate(event.target.value)}
+            min={today || undefined}
+            onChange={(event) => setChosenStartDate(event.target.value)}
             required
           />
         </label>
