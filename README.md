@@ -304,6 +304,29 @@ Rate limits on `/api/trips` and `/api/voice` are in-process, so the effective ce
 `limit x instances`. That is fine for one host or a small deployment. For real production traffic,
 move them behind a shared store (Vercel KV, Upstash) or your platform's WAF.
 
+### Running it in public
+
+A public deployment's built-in limiter counts per server instance, stored trips never expire, and
+every visitor shares the deployment's Open-Meteo quota. One firewall rule covers most of that,
+because each planned trip is one API call:
+
+1. In the Vercel dashboard, open the project → **Firewall** → **Configure** → **+ New Rule**.
+2. Condition: **Request Path** *starts with* `/api/`.
+3. Action: **Rate Limit**, fixed window of **60s**, **20** requests, keyed by **IP**, response
+   **429**.
+4. **Save Rule** → **Review Changes** → **Publish**.
+
+The Hobby plan allows one rate-limit rule per project, which is why the condition covers every API
+route at once. Vercel counts it at the edge before your code runs, so unlike the in-process limiter
+it holds across instances. Counters are tracked per region.
+
+Stored trips (about 10 KB each) accumulate in Blob until deleted. With the firewall rule in place
+that growth is slow. If it ever matters, `npx vercel blob list-stores` shows the store id and
+`npx vercel blob empty-store <store-id>` clears it. That deletes every saved trip, so existing shared
+links stop working.
+
+Vercel's Hobby plan and Open-Meteo's free API are both licensed for non-commercial use only.
+
 ---
 
 ## Security

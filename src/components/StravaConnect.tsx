@@ -105,7 +105,9 @@ export function StravaConnect({
         <div>
           <p className="text-sm font-medium text-slate-200">Strava training load</p>
           <p className="text-xs text-slate-500">
-            Optional — paste your free Strava API app credentials to auto-adjust intensity
+            {hostConfigured
+              ? "Optional — connect your Strava account to auto-adjust intensity"
+              : "Optional — paste your free Strava API app credentials to auto-adjust intensity"}
           </p>
         </div>
 
