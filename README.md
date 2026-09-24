@@ -21,10 +21,13 @@ Originally built for the Checkout Travel & Hospitality Hackathon.
 **See it live: <https://tide-fit.vercel.app>** — plan a trip, or open the
 [sample Lisbon trip](https://tide-fit.vercel.app/trip/demo-lisbon). The live site runs with no paid
 API keys, so itineraries are rule-based rather than LLM-written; everything else is the real thing.
+Strava and Google Calendar sign-in are switched on there but limited to the maintainer's test
+accounts (see [Optional setup](#optional-setup)), so other visitors will get an error from the
+provider.
 
-To run your own copy, none of these need API keys, accounts or configuration. With nothing set you still get
-live condition data from Open-Meteo, real safety classification, a rule-based itinerary and a
-device-voice briefing.
+To run your own copy, none of these need API keys, accounts or configuration. With nothing set you
+still get live condition data from Open-Meteo, real safety classification, a rule-based itinerary
+and a device-voice briefing.
 
 **In your browser, nothing to install:**
 
@@ -60,9 +63,9 @@ Then open <http://localhost:3000>.
 
 Enter a destination, pick dates and sports, and you get a day-by-day plan with a **safe / caution /
 unsafe** verdict for each sport and the measurement behind each verdict. With the optional keys set,
-the plan also names real local spots and lists bookable stays nearby. To see a finished example without planning anything, open **`/trip/demo-lisbon`**. It's a
-3-day Lisbon trip where day 2 refuses an open-water swim in 1.9 m surf and moves the session
-inland.
+the plan also names real local spots and lists bookable stays nearby. To see a finished example
+without planning anything, open **`/trip/demo-lisbon`**: a 3-day Lisbon trip where day 2 refuses an
+open-water swim in 1.9 m surf and moves the session inland.
 
 ![The sample Lisbon trip, with day 2 marked unsafe for swimming](docs/demo-trip.png)
 
@@ -179,7 +182,7 @@ Condition data from Open-Meteo (geocoding, marine, forecast, air quality) needs 
 | `SUPABASE_SERVICE_ROLE_KEY` | Owner-only row-level security — **see [Deploying](#deploying)** | Trip storage uses the anon key and the original schema |
 | `TIDEFIT_SECRET_KEY` | Encrypts visitor-pasted Strava secrets before they touch a cookie | The paste-your-own-credentials path is refused |
 | `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` | Google Calendar sync | Sync button disabled |
-| `STRAVA_CLIENT_ID` + `STRAVA_CLIENT_SECRET` | Training-load-aware intensity for every visitor | Each visitor can supply their own app credentials instead |
+| `STRAVA_CLIENT_ID` + `STRAVA_CLIENT_SECRET` | Recent training load on each trip; with `OPENAI_API_KEY`, the itinerary also adjusts intensity to it | Visitors can supply their own app credentials instead (needs `TIDEFIT_SECRET_KEY`) |
 | `NEXT_PUBLIC_APP_URL` | Base URL for OAuth redirect URIs and links in calendar events | On Vercel, the project's production domain (automatic); otherwise `http://localhost:3000` |
 | `TIDEFIT_DEMO_MODE` | Forces the canned Lisbon trip for every request | Normal planning |
 
@@ -187,8 +190,13 @@ Condition data from Open-Meteo (geocoding, marine, forecast, air quality) needs 
 
 - **Supabase** — run `supabase/schema.sql` in the SQL editor, then set the two `NEXT_PUBLIC_SUPABASE_*`
   values. For anything public, also read [Deploying](#deploying) before you expose it.
-- **Google Calendar** — create an OAuth client with redirect URI `{APP_URL}/api/calendar/callback`
-  and the `calendar.events` scope.
+- **Google Calendar** — in Google Cloud Console (no billing needed): create a project, enable the
+  **Google Calendar API**, set up **Google Auth Platform** with an External audience, and create a
+  **Web application** client with the redirect URI `{APP_URL}/api/calendar/callback`, where
+  `{APP_URL}` is your site's public URL. The app requests only the `calendar.events` scope. While the
+  app is in Testing, only accounts added as **test users** can sync; opening it to everyone requires
+  Google's verification for that scope. After signing in, click **Sync to Google Calendar** once more:
+  it writes one all-day event per trip day.
 - **Strava** — since June 2026 Strava requires a paid subscription to create an API app, and the
   standard tier lets one app serve a limited number of athletes (about 10). Two ways to enable it:
   - **Host-configured (recommended):** set `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` and every
@@ -196,14 +204,17 @@ Condition data from Open-Meteo (geocoding, marine, forecast, air quality) needs 
     the browser. Register the app's Authorization Callback Domain as your host, e.g.
     `tide-fit.vercel.app`; `docs/tidefit-icon.png` works as the app icon.
   - **Visitor-supplied:** leave those blank and set `TIDEFIT_SECRET_KEY` instead. Each visitor
-    pastes the Client ID and Secret of their own Strava API app (which needs their own Strava
-    subscription) from [strava.com/settings/api](https://www.strava.com/settings/api) (Authorization Callback Domain =
-    your host; TideFit uses `{APP_URL}/api/strava/callback`). The secret is encrypted with
+    pastes the Client ID and Secret of their own Strava API app, which needs their own Strava
+    subscription, from [strava.com/settings/api](https://www.strava.com/settings/api)
+    (Authorization Callback Domain = your host; TideFit uses `{APP_URL}/api/strava/callback`).
+    The secret is encrypted with
     AES-256-GCM before it goes into a 7-day cookie, so the cookie holds ciphertext that is useless
     without your server key. Without `TIDEFIT_SECRET_KEY` this path is refused rather than storing
     a third-party secret in plaintext.
 
-  Without Strava, trips still plan; intensity just isn't auto-adjusted from recent training.
+  Once connected, each planned trip shows the visitor's last 7 days of training. With `OPENAI_API_KEY`
+  set, the itinerary also schedules recovery and intensity around it; the rule-based itinerary shows
+  the load but doesn't change the plan. Without Strava, trips plan exactly the same way.
 
 ---
 
@@ -218,12 +229,14 @@ npm run build        # production build; works with zero keys
 npm run check:rls    # probes your Supabase project the way an attacker would
 ```
 
-CI runs typecheck, lint, test and a zero-key build on every push and pull request
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+CI runs typecheck, lint, test and a zero-key build on every push and pull request, and deploys
+`main` once they pass ([`.github/workflows/ci.yml`](.github/workflows/ci.yml); see
+[Deploying](#deploying)).
 
 Tests in [`src/lib/safety.test.ts`](src/lib/safety.test.ts) concentrate on the parts where being
-wrong matters: the classifier's fail-safe behaviour, threshold boundaries, the OAuth return path,
-the untrusted-text sanitiser and the Strava training-load summary.
+wrong matters: the classifier's fail-safe behaviour and threshold boundaries, the OAuth return path
+and public URL, the untrusted-text sanitiser, sealed cookies, trip storage on Blob, the `check:rls`
+verdicts, and the Strava training-load summary.
 
 > **Don't run `npm run build` while `npm run dev` is live.** They share `.next/`, and the build
 > clobbers the dev server's vendor chunks — you get a spurious
@@ -244,12 +257,19 @@ src/lib/anchor.ts       resolves where the training actually happens
 src/lib/calendar.ts     Google Calendar OAuth + event creation
 src/lib/strava.ts       Strava OAuth + training load summary
 src/lib/oauth-state.ts  CSRF nonce shared by both OAuth flows
+src/lib/seal.ts         AES-256-GCM sealing for visitor-pasted Strava secrets
 src/lib/rate-limit.ts   per-IP limits on the endpoints that cost money
+src/lib/env.ts          server config, integration flags and the public base URL
 src/lib/store.ts        trip persistence: Supabase, then Vercel Blob, then memory
 src/lib/blob-store.ts   private Vercel Blob storage for trips
+src/lib/rls-verdict.ts  pass/fail logic behind npm run check:rls
 src/lib/demo.ts         the canned Lisbon trip
-src/components/         DayCard, LodgingList, LodgingMap, AudioBriefing, StravaConnect
+src/proxy.ts            refreshes the Supabase session (Next 16's replacement for middleware)
+src/components/         TripForm, DayCard, LodgingList, LodgingMap, AudioBriefing,
+                        StravaConnect, CalendarSyncButton, AuthPanel
+scripts/                check:conditions, check:lodging, check:rls, demo:audio
 supabase/               schema plus the hardened RLS migration
+docs/                   the audit report, the README screenshot and the app icon
 ```
 
 ### Demo safety
@@ -270,15 +290,20 @@ Live demos break when sponsor APIs rate-limit on stage, so there are three layer
 
 ## Deploying
 
-This repository deploys itself: every push to `main` runs the CI checks and, only if they all pass, deploys to <https://tide-fit.vercel.app> (the `deploy` job in `.github/workflows/ci.yml`, authenticated by a `VERCEL_TOKEN` repository secret).
+This repository deploys itself: every push to `main` runs the CI checks and, only if they all pass,
+deploys to <https://tide-fit.vercel.app> (the `deploy` job in `.github/workflows/ci.yml`,
+authenticated by a `VERCEL_TOKEN` repository secret with Full Account scope; the Vercel CLI cannot
+deploy with a project-scoped token).
 
 For your own copy: push to GitHub, import into Vercel, and add the same environment variables. OAuth
 redirect URIs use the project's production domain automatically (`VERCEL_PROJECT_PRODUCTION_URL`);
 set `NEXT_PUBLIC_APP_URL` only if you serve the app from a custom domain.
 
 Serverless instances don't share memory, so a deployment needs durable storage for shared trip
-links to work. The Deploy button handles this by attaching a private Vercel Blob store. On a manual
-import, add one under **Storage → Create → Blob** and connect it to the project. From the CLI:
+links to work; with neither Blob nor Supabase, a shared link can 404 when a different instance
+serves it. The Deploy button handles this by attaching a private Vercel Blob store. On a manual
+import, add one under **Storage → Create → Blob** and connect it to the project. Supabase takes
+priority over Blob when both are configured, and adds sign-in and per-user trip lists. From the CLI:
 
 ```bash
 npx vercel link --yes
@@ -287,11 +312,12 @@ npx vercel deploy --prod
 ```
 
 `.vercelignore` keeps every local `.env*` file out of CLI uploads, so a Supabase service-role key in
-your `.env.local` can't end up in a deployment by accident. Note that `vercel link` writes a
-short-lived `VERCEL_OIDC_TOKEN` into `.env.local`, and may add a broad `.env*` rule to `.gitignore`
-that would also hide `.env.example`; the existing `.env*.local` rule already covers the secrets. With neither Blob
-nor Supabase, a shared link can 404 when a different instance serves it. Supabase takes priority
-over Blob when both are configured, and adds sign-in and per-user trip lists.
+your `.env.local` can't end up in a deployment by accident. Two side effects of the CLI to know
+about: `vercel link` writes a short-lived `VERCEL_OIDC_TOKEN` into `.env.local` and may add a broad
+`.env*` rule to `.gitignore` that would also hide `.env.example` (the existing `.env*.local` rule
+already covers the secrets), and the Blob store's `BLOB_READ_WRITE_TOKEN` is created for every
+environment, so `vercel env pull` copies it to your machine. Restrict it to Production under
+**Settings → Environment Variables**.
 
 **Before you expose a deployment publicly, do these two things in this order:**
 
@@ -305,10 +331,6 @@ anon key ships to the browser by design, that makes **every saved trip readable 
 takes that key from your page source — destinations, dates and full itineraries for every user. The
 migration makes trips owner-only; the service-role key is what lets the server keep serving shared
 links. Doing step 2 without step 1 leaves the app unable to read any trip.
-
-Rate limits on `/api/trips` and `/api/voice` are in-process, so the effective ceiling is
-`limit x instances`. That is fine for one host or a small deployment. For real production traffic,
-move them behind a shared store (Vercel KV, Upstash) or your platform's WAF.
 
 ### Running it in public
 
@@ -362,7 +384,8 @@ Next 14 advisory set that the audit originally flagged is gone with the upgrade.
 
 ## Stack
 
-Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS · Supabase (auth + saved trips) · Vercel
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS · Vercel (hosting + Blob storage)
+· Supabase (optional auth + saved trips)
 
 **APIs:** Open-Meteo Geocoding, Marine, Forecast and Air Quality (no key) · Tavily (search
 grounding) · OpenAI (itinerary) · ElevenLabs (narration) · Stay22 (Accommodations API + map widget)
