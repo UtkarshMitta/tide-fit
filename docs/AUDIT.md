@@ -57,7 +57,8 @@ compare and clears the nonce so a state is good exactly once. No shared signing 
 across serverless instances.
 
 **Verified.** A forged callback now redirects to `?strava=error` / `?calendar=error` without
-exchanging the code; a legitimate flow passes state validation and proceeds.
+exchanging the code; a legitimate flow passes state validation and proceeds. Both flows were later
+completed for real on the live site with real Strava and Google apps; see Deployment.
 
 ### 4. No rate limiting on the endpoints that spend money — High
 
@@ -400,6 +401,22 @@ answering 429. Verified: of 25 rapid requests, exactly 20 reached the app and 5 
 `x-vercel-mitigated: deny`, while non-API pages were unaffected. Unlike the in-process limiter it holds
 across instances, which also bounds Blob growth and the shared Open-Meteo quota.
 
+**Real sign-in, verified live.** With a Strava API app and a Google OAuth client configured through
+Vercel environment variables:
+
+- *Strava:* Connect → authorize → back on the site as connected. A trip planned afterwards showed the
+  "Strava load" badge, which only renders once the token exchange and the activities fetch have both
+  succeeded.
+- *Google Calendar:* authorize → sync from a trip page → one all-day event per trip day appeared in
+  the calendar.
+
+Both redirects were checked first: `redirect_uri` is the production domain, the requested scopes
+are `activity:read` and `calendar.events`, and the `state` nonce is present. Both apps run in their
+providers' restricted modes. Google's is in Testing, so only listed test users can sync, and
+publishing it requires Google's verification for the calendar scope. Strava's paid standard tier
+serves about 10 athletes. Visitors outside those limits see the buttons but get an error from the
+provider.
+
 Remaining limits of a public demo: stored trips never expire, and Vercel's Hobby plan and Open-Meteo's
 free API are both licensed for non-commercial use only. See the README's "Running it in public".
 
@@ -433,7 +450,8 @@ Google, and it sits behind Vercel's Deployment Protection: on the live project i
 login while `tide-fit.vercel.app` returns 200. A visitor finishing sign-in, or following a link in a
 synced calendar event, would have landed on a Vercel login page. `resolveAppUrl()` now prefers an
 explicit URL, then `VERCEL_PROJECT_PRODUCTION_URL`, and treats an empty `NEXT_PUBLIC_APP_URL=` as
-unset. Latent until now because no sign-in is configured on the live site.
+unset. Confirmed on the live site: the Strava and Google authorize redirects both carry
+`redirect_uri=https://tide-fit.vercel.app/...`, and both sign-ins completed.
 
 ## Verification
 
