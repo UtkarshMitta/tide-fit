@@ -12,20 +12,40 @@ import { useRouter, useSearchParams } from "next/navigation";
  * When the host already configured STRAVA_* in env, the credential form is
  * skipped and Connect goes straight to OAuth.
  */
+/**
+ * What connecting actually does. Training load only changes the plan when an
+ * LLM writes the itinerary; the rule-based itinerary shows the load on the trip
+ * page but plans the same days either way, so the copy must not promise more.
+ */
+function describeEffect(plansAdapt: boolean) {
+  return plansAdapt
+    ? { purpose: "to shape each plan around your recent training", result: "your recent training will shape the plan" }
+    : { purpose: "to show your recent training on each trip", result: "your last 7 days of training will show on each trip" };
+}
+
 /** Post-OAuth status is carried back in the query string by the callback route. */
-const STATUS_BANNERS: Record<string, string> = {
-  connected: "Strava connected — your recent training will shape the plan.",
-  denied: "Strava authorization was cancelled.",
-  error: "Could not connect Strava. Check your Client ID and Secret.",
-};
+function statusBanner(status: string | null, plansAdapt: boolean, hostConfigured: boolean): string | null {
+  if (status === "connected") return `Strava connected — ${describeEffect(plansAdapt).result}.`;
+  if (status === "denied") return "Strava authorization was cancelled.";
+  if (status === "error") {
+    // Visitors on a host-configured deployment never enter credentials.
+    return hostConfigured
+      ? "Could not connect Strava. Please try again."
+      : "Could not connect Strava. Check your Client ID and Secret.";
+  }
+  return null;
+}
 
 export function StravaConnect({
   hostConfigured,
   connected,
+  plansAdapt,
 }: {
   /** True when the server has STRAVA_CLIENT_ID / SECRET in env. */
   hostConfigured: boolean;
   connected: boolean;
+  /** True when an LLM writes the itinerary, the only path that adapts to training load. */
+  plansAdapt: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -40,7 +60,7 @@ export function StravaConnect({
   const searchParams = useSearchParams();
   const banner = bannerDismissed
     ? null
-    : (STATUS_BANNERS[searchParams.get("strava") ?? ""] ?? null);
+    : statusBanner(searchParams.get("strava"), plansAdapt, hostConfigured);
 
   async function connectWithHostApp() {
     setBusy(true);
@@ -86,7 +106,7 @@ export function StravaConnect({
       <div className="flex flex-wrap items-center gap-3">
         <p className="inline-flex items-center gap-2 rounded-full border border-orange-400/30 bg-orange-500/10 px-3 py-1.5 text-xs text-orange-200">
           <span className="h-1.5 w-1.5 rounded-full bg-orange-400" aria-hidden />
-          Strava connected — recent training load will shape the plan
+          Strava connected — {describeEffect(plansAdapt).result}
         </p>
         <button
           type="button"
@@ -107,8 +127,8 @@ export function StravaConnect({
           <p className="text-sm font-medium text-slate-200">Strava training load</p>
           <p className="text-xs text-slate-500">
             {hostConfigured
-              ? "Optional — connect your Strava account to auto-adjust intensity"
-              : "Optional — paste your Strava API app credentials to auto-adjust intensity"}
+              ? `Optional — connect your Strava account ${describeEffect(plansAdapt).purpose}`
+              : `Optional — paste your Strava API app credentials ${describeEffect(plansAdapt).purpose}`}
           </p>
         </div>
 
