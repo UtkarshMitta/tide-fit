@@ -97,7 +97,11 @@ export default async function HomePage() {
         <TripForm demoTripId={DEMO_TRIP_ID} />
         {stravaOffered ? (
           <div className="mt-4">
-            <StravaConnect hostConfigured={integrationStatus.strava} connected={stravaConnected} />
+            <StravaConnect
+              hostConfigured={integrationStatus.strava}
+              connected={stravaConnected}
+              plansAdapt={integrationStatus.llm}
+            />
           </div>
         ) : null}
       </section>
