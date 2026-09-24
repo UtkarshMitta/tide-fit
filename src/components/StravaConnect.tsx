@@ -5,8 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 /**
  * Optional Strava connect. Visitors can skip it entirely. To connect they
- * paste Client ID + Client Secret from a free Strava API application
- * (strava.com/settings/api), then authorize their athlete account.
+ * paste Client ID + Client Secret from their own Strava API application
+ * (strava.com/settings/api; since June 2026 creating one requires a paid
+ * Strava subscription), then authorize their athlete account.
  *
  * When the host already configured STRAVA_* in env, the credential form is
  * skipped and Connect goes straight to OAuth.
@@ -107,7 +108,7 @@ export function StravaConnect({
           <p className="text-xs text-slate-500">
             {hostConfigured
               ? "Optional — connect your Strava account to auto-adjust intensity"
-              : "Optional — paste your free Strava API app credentials to auto-adjust intensity"}
+              : "Optional — paste your Strava API app credentials to auto-adjust intensity"}
           </p>
         </div>
 
@@ -137,7 +138,7 @@ export function StravaConnect({
       {open && !hostConfigured ? (
         <form onSubmit={connectWithPastedKeys} className="mt-4 space-y-3 border-t border-white/10 pt-4">
           <p className="text-xs leading-relaxed text-slate-400">
-            Create a free API application at{" "}
+            Create an API application (this needs a Strava subscription) at{" "}
             <a
               href="https://www.strava.com/settings/api"
               target="_blank"

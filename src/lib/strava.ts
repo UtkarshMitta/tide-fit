@@ -8,8 +8,10 @@ import { round } from "@/lib/utils";
 
 /**
  * Strava is optional. Credentials can come from the server env (one shared app)
- * or from the visitor — they create a free API application at
+ * or from the visitor — they create an API application at
  * strava.com/settings/api and paste Client ID + Client Secret into TideFit.
+ * Since June 2026 Strava requires a paid subscription to create an API app,
+ * and the standard tier serves a limited number of connected athletes.
  * Either way the athlete then OAuth-connects their own account so the last
  * seven days of training can shape the itinerary.
  */

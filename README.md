@@ -189,12 +189,15 @@ Condition data from Open-Meteo (geocoding, marine, forecast, air quality) needs 
   values. For anything public, also read [Deploying](#deploying) before you expose it.
 - **Google Calendar** — create an OAuth client with redirect URI `{APP_URL}/api/calendar/callback`
   and the `calendar.events` scope.
-- **Strava** — two ways to enable it:
+- **Strava** — since June 2026 Strava requires a paid subscription to create an API app, and the
+  standard tier lets one app serve a limited number of athletes (about 10). Two ways to enable it:
   - **Host-configured (recommended):** set `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` and every
-    visitor connects through one shared app. Nothing sensitive reaches the browser.
+    visitor connects through one shared app, up to that athlete limit. Nothing sensitive reaches
+    the browser. Register the app's Authorization Callback Domain as your host, e.g.
+    `tide-fit.vercel.app`; `docs/tidefit-icon.png` works as the app icon.
   - **Visitor-supplied:** leave those blank and set `TIDEFIT_SECRET_KEY` instead. Each visitor
-    pastes their own Client ID and Secret from
-    [strava.com/settings/api](https://www.strava.com/settings/api) (Authorization Callback Domain =
+    pastes the Client ID and Secret of their own Strava API app (which needs their own Strava
+    subscription) from [strava.com/settings/api](https://www.strava.com/settings/api) (Authorization Callback Domain =
     your host; TideFit uses `{APP_URL}/api/strava/callback`). The secret is encrypted with
     AES-256-GCM before it goes into a 7-day cookie, so the cookie holds ciphertext that is useless
     without your server key. Without `TIDEFIT_SECRET_KEY` this path is refused rather than storing
